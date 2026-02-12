@@ -12,16 +12,41 @@ public class GameUIManager : NetworkBehaviour
     public Slider taskSlider;
     public TextMeshProUGUI taskCountText;
 
+    // --- NEW: Add this variable ---
+    [Header("Interaction")]
+    public TextMeshProUGUI interactionText;
+
     [Header("End Game Screens")]
     public GameObject crewmateWinScreen;
     public GameObject impostorWinScreen;
 
     private void Start()
     {
-        // Reset screens
         if (crewmateWinScreen) crewmateWinScreen.SetActive(false);
         if (impostorWinScreen) impostorWinScreen.SetActive(false);
         if (gamePanel) gamePanel.SetActive(true);
+
+        // --- NEW: Hide interaction text on start ---
+        if (interactionText != null) interactionText.gameObject.SetActive(false);
+    }
+
+    public void UpdateInteractionText(string message)
+    {
+        if (interactionText == null)
+        {
+            Debug.LogError("⚠ Interaction Text is missing in Inspector on GameUIManager!");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(message))
+        {
+            interactionText.gameObject.SetActive(false);
+        }
+        else
+        {
+            interactionText.text = message;
+            interactionText.gameObject.SetActive(true);
+        }
     }
 
     private void Update()
@@ -36,16 +61,15 @@ public class GameUIManager : NetworkBehaviour
         }
         else
         {
-            timerText.text = ""; // Hide timer during gameplay
+            timerText.text = "";
 
-            // 2. Update Role (Only show once game starts)
+            // 2. Update Role
             if (NetworkManager.Singleton.LocalClient != null &&
                 NetworkManager.Singleton.LocalClient.PlayerObject != null)
             {
                 ulong myId = NetworkManager.Singleton.LocalClientId;
                 bool isImpostor = GameManager.Instance.ImpostorId.Value == myId;
 
-                // --- FIX: Set Color directly instead of using Tags ---
                 if (isImpostor)
                 {
                     roleText.text = "IMPOSTOR";

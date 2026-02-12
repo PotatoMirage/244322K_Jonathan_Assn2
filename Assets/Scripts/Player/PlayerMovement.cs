@@ -226,7 +226,15 @@ public class PlayerMovement : NetworkBehaviour
 
     private void OnDeathStateChanged(bool previous, bool current)
     {
-        if (current) HandleDeath();
+        if (current)
+        {
+            HandleDeath();
+
+            if (IsServer && GameManager.Instance != null)
+            {
+                GameManager.Instance.OnPlayerDied(OwnerClientId);
+            }
+        }
     }
 
     private void HandleDeath()

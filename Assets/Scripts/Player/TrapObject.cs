@@ -24,11 +24,15 @@ public class TrapObject : Interactable
         TriggerTrapClientRpc();
 
         Collider[] hits = Physics.OverlapSphere(transform.position, trapRadius);
+
         foreach (var hit in hits)
         {
-            PlayerMovement player = hit.GetComponent<PlayerMovement>();
+            // --- FIX: Change GetComponent to GetComponentInParent ---
+            PlayerMovement player = hit.GetComponentInParent<PlayerMovement>();
+
             if (player != null && !player.isDead.Value)
             {
+                // Ensure we don't kill the impostor who triggered it
                 if (player.OwnerClientId != GameManager.Instance.ImpostorId.Value)
                 {
                     player.isDead.Value = true;
