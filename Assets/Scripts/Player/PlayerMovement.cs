@@ -79,10 +79,15 @@ public class PlayerMovement : NetworkBehaviour
 
     private void Update()
     {
+        // FIX: Call this OUTSIDE the IsOwner check so all clients see the animation
+        UpdateAnimationState();
+
         if (!IsOwner) return;
 
         if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value)
         {
+            // Reset walking state if gameplay is paused
+            if (netIsWalking.Value) netIsWalking.Value = false;
             if (m_Animator) m_Animator.SetBool(IsWalkingHash, false);
             return;
         }
@@ -90,8 +95,6 @@ public class PlayerMovement : NetworkBehaviour
         HandleInput();
 
         if (Input.GetKeyDown(KeyCode.Space) && IsImpostor() && !isDead.Value) TryKillTarget();
-
-        UpdateAnimationState();
     }
 
     private void FixedUpdate()
@@ -99,23 +102,30 @@ public class PlayerMovement : NetworkBehaviour
         if (!IsOwner) return;
         if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value) return;
 
-        float speed = isDead.Value ? ghostSpeed : moveSpeed;
-        Vector3 desiredMove = m_Movement * speed * Time.fixedDeltaTime;
-
         if (isDead.Value)
         {
+            // Ghost Movement (Remains Manual / Flying)
+            Vector3 desiredMove = m_Movement * ghostSpeed * Time.fixedDeltaTime;
             m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
-        }
-        else if (m_Movement.sqrMagnitude > 0)
-        {
-            m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
-            Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.fixedDeltaTime, 0f);
-            m_Rotation = Quaternion.LookRotation(desiredForward);
-            m_Rigidbody.MoveRotation(m_Rotation);
+            m_Rigidbody.linearVelocity = Vector3.zero;
         }
         else
         {
-            m_Rigidbody.linearVelocity = Vector3.zero;
+            // Living Movement (Root Motion Logic)
+
+            // 1. ROTATION: Handled manually for snappy control
+            if (m_Movement.sqrMagnitude > 0)
+            {
+                Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.fixedDeltaTime, 0f);
+                m_Rotation = Quaternion.LookRotation(desiredForward);
+                m_Rigidbody.MoveRotation(m_Rotation);
+            }
+
+            // 2. STOP SLIDING: Explicitly zero out physics momentum.
+            // This prevents "ice sliding" after collisions or spawning.
+            // We preserve 'y' so gravity still works, but kill x/z velocity.
+            Vector3 currentVel = m_Rigidbody.linearVelocity;
+            m_Rigidbody.linearVelocity = new Vector3(0f, currentVel.y, 0f);
             m_Rigidbody.angularVelocity = Vector3.zero;
         }
     }
@@ -274,24 +284,22 @@ public class PlayerMovement : NetworkBehaviour
     }
     private void OnAnimatorMove()
     {
-        if (!IsOwner || m_Rigidbody == null) return;
+        // Only the Owner applies Root Motion to the Rigidbody
+        if (!IsOwner) return;
 
-        // Ghosts do not use Root Motion (they fly)
+        // Ghosts do not use Root Motion (they fly manually)
         if (isDead.Value) return;
 
         if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay) return;
 
-        // Apply Root Motion Magnitude in the direction of Input
-        // This ensures the animation dictates speed, but Input dictates direction
-        if (m_Movement.sqrMagnitude > 0.01f)
+        if (m_Animator != null && m_Rigidbody != null)
         {
-            m_Rigidbody.MovePosition(m_Rigidbody.position + m_Movement * m_Animator.deltaPosition.magnitude);
-            m_Rigidbody.MoveRotation(m_Rotation);
-        }
-        else
-        {
-            // If no input, just let the animation play out (e.g. idle sway) without moving position significantly
-            m_Rigidbody.MoveRotation(m_Rotation);
+            // Apply Root Motion from the Animation to the Rigidbody.
+            // This ensures the movement matches the feet exactly.
+            m_Rigidbody.MovePosition(m_Rigidbody.position + m_Animator.deltaPosition);
+
+            // We do NOT apply Root Rotation here because we handle it manually 
+            // in FixedUpdate for better gameplay responsiveness.
         }
     }
 }

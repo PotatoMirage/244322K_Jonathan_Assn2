@@ -7621,10 +7621,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GlobalEventManager
   ShowTopMostFoldoutHeaderGroup: 1
-  normalAmbient: {r: 1, g: 1, b: 1, a: 1}
-  sabotageAmbient: {r: 0, g: 0, b: 0, a: 1}
   IsLightsSabotaged:
     m_InternalValue: 0
+  normalAmbient: {r: 1, g: 1, b: 1, a: 1}
+  sabotageAmbient: {r: 0, g: 0, b: 0, a: 1}
 --- !u!114 &765732934
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10591,7 +10591,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.CanvasScaler
-  m_UiScaleMode: 0
+  m_UiScaleMode: 1
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
   m_ReferenceResolution: {x: 800, y: 600}
