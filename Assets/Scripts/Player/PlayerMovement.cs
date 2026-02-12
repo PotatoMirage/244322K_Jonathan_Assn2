@@ -2,14 +2,14 @@
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TMPro;
+using TMPro; // Needed for referencing TMP components
 
 public class PlayerMovement : NetworkBehaviour
 {
-    [Header("Settings")]
     public float turnSpeed = 20f;
     public float moveSpeed = 5f;
     public float ghostSpeed = 8f;
+
     public float killRange = 2.0f;
 
     Animator m_Animator;
@@ -26,43 +26,45 @@ public class PlayerMovement : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         if (IsServer) PlayerNum.Value = (int)OwnerClientId;
-
-        // Setup Camera and Spawn for the Local Player
-        if (IsOwner)
-        {
-            SetupCamera();
-            MoveToSpawnPoint();
-        }
+        if (IsOwner) FindMyCamera();
 
         isDead.OnValueChanged += OnDeathStateChanged;
+        SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
-    private void MoveToSpawnPoint()
+    public override void OnNetworkDespawn()
     {
-        // Only run this if we are in the MainScene
-        if (SceneManager.GetActiveScene().name != "MainScene") return;
-
-        SpawnPoint[] points = FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None);
-        if (points.Length > 0)
-        {
-            int index = (int)OwnerClientId % points.Length;
-            // Because we use ClientNetworkTransform, we can move ourselves!
-            transform.position = points[index].transform.position;
-            transform.rotation = points[index].transform.rotation;
-
-            // Physics Reset
-            if (GetComponent<Rigidbody>())
-                GetComponent<Rigidbody>().linearVelocity = Vector3.zero; // Use .velocity if on older Unity versions
-        }
+        SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
-    private void SetupCamera()
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if (IsOwner) FindMyCamera();
+    }
+
+
+    private void FindMyCamera()
+    {
+        if (!IsOwner) return;
+
         var virtualCamera = FindAnyObjectByType<CinemachineCamera>();
         if (virtualCamera != null)
         {
             virtualCamera.Follow = transform;
             virtualCamera.LookAt = transform;
+        }
+
+        if (SceneManager.GetActiveScene().name == "MainScene")
+        {
+            SpawnPoint[] points = FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None);
+
+            if (points.Length > 0)
+            {
+                int index = (int)OwnerClientId % points.Length;
+                transform.position = points[index].transform.position;
+                transform.rotation = points[index].transform.rotation;
+            }
+            if (m_Rigidbody != null) m_Rigidbody.linearVelocity = Vector3.zero;
         }
     }
 
@@ -109,8 +111,8 @@ public class PlayerMovement : NetworkBehaviour
 
     void HandleEmotes()
     {
-        if (Input.GetKeyDown(KeyCode.Alpha1)) PlayEmoteServerRpc("Hello");
-        if (Input.GetKeyDown(KeyCode.Alpha2)) PlayEmoteServerRpc("Laugh");
+        if (Input.GetKeyDown(KeyCode.Alpha1)) PlayEmoteServerRpc("😀");
+        if (Input.GetKeyDown(KeyCode.Alpha2)) PlayEmoteServerRpc("😂");
     }
 
     void UpdateAnimationState()
@@ -122,6 +124,16 @@ public class PlayerMovement : NetworkBehaviour
         }
         m_Animator.SetBool("IsWalking", netIsWalking.Value);
     }
+    void OnAnimatorMove()
+    {
+        if (!IsOwner) return;
+
+        if (m_Rigidbody != null)
+        {
+            m_Rigidbody.MovePosition(m_Rigidbody.position + m_Movement * m_Animator.deltaPosition.magnitude);
+            m_Rigidbody.MoveRotation(m_Rotation);
+        }
+    }
 
     void FixedUpdate()
     {
@@ -131,13 +143,10 @@ public class PlayerMovement : NetworkBehaviour
         float currentSpeed = isDead.Value ? ghostSpeed : moveSpeed;
         Vector3 desiredMove = m_Movement * currentSpeed * Time.deltaTime;
 
-        // Physics Movement
         if (m_Rigidbody != null && !m_Rigidbody.isKinematic)
         {
             m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
-
-            // ROTATION FIX: Ensure we have input before turning
-            if (m_Movement.magnitude > 0.01f)
+            if (m_Movement.magnitude > 0)
             {
                 Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.deltaTime, 0f);
                 m_Rotation = Quaternion.LookRotation(desiredForward);
@@ -162,11 +171,7 @@ public class PlayerMovement : NetworkBehaviour
         GameObject prefab = Resources.Load<GameObject>("EmoteBubble");
         if (prefab != null)
         {
-            // EMOJI FIX: Set 'transform' as the parent so it moves with the player
-            // We instantiate at a local offset (Vector3.up * 2.5f)
-            GameObject emoteInstance = Instantiate(prefab, transform);
-            emoteInstance.transform.localPosition = Vector3.up * 2.5f;
-
+            GameObject emoteInstance = Instantiate(prefab, transform.position + Vector3.up * 2.5f, Quaternion.identity);
             var textComp = emoteInstance.GetComponentInChildren<TextMeshProUGUI>();
             if (textComp != null) textComp.text = emoteName;
         }
