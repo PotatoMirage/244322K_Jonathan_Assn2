@@ -27,12 +27,10 @@ public class TrapObject : Interactable
 
         foreach (var hit in hits)
         {
-            // --- FIX: Change GetComponent to GetComponentInParent ---
             PlayerMovement player = hit.GetComponentInParent<PlayerMovement>();
 
             if (player != null && !player.isDead.Value)
             {
-                // Ensure we don't kill the impostor who triggered it
                 if (player.OwnerClientId != GameManager.Instance.ImpostorId.Value)
                 {
                     player.isDead.Value = true;

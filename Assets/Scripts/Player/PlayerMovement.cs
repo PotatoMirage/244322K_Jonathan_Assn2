@@ -2,7 +2,7 @@
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TMPro; // Needed for referencing TMP components
+using TMPro;
 
 public class PlayerMovement : NetworkBehaviour
 {
@@ -11,6 +11,9 @@ public class PlayerMovement : NetworkBehaviour
     public float ghostSpeed = 8f;
 
     public float killRange = 2.0f;
+
+    // --- NEW: Reference to the DeadBody Prefab ---
+    public GameObject deadBodyPrefab;
 
     Animator m_Animator;
     Rigidbody m_Rigidbody;
@@ -41,7 +44,6 @@ public class PlayerMovement : NetworkBehaviour
     {
         if (IsOwner) FindMyCamera();
     }
-
 
     private void FindMyCamera()
     {
@@ -77,6 +79,13 @@ public class PlayerMovement : NetworkBehaviour
 
     void Update()
     {
+        // Disable movement during Meeting
+        if (GameManager.Instance != null && GameManager.Instance.IsMeetingActive.Value)
+        {
+            m_Animator.SetBool("IsWalking", false);
+            return;
+        }
+
         if (GameManager.Instance != null && !GameManager.Instance.IsGameActive.Value && !isDead.Value)
         {
             m_Animator.SetBool("IsWalking", false);
@@ -124,6 +133,7 @@ public class PlayerMovement : NetworkBehaviour
         }
         m_Animator.SetBool("IsWalking", netIsWalking.Value);
     }
+
     void OnAnimatorMove()
     {
         if (!IsOwner) return;
@@ -137,6 +147,7 @@ public class PlayerMovement : NetworkBehaviour
 
     void FixedUpdate()
     {
+        if (GameManager.Instance != null && GameManager.Instance.IsMeetingActive.Value) return;
         if (GameManager.Instance != null && !GameManager.Instance.IsGameActive.Value && !isDead.Value) return;
         if (!IsOwner) return;
 
@@ -145,12 +156,18 @@ public class PlayerMovement : NetworkBehaviour
 
         if (m_Rigidbody != null && !m_Rigidbody.isKinematic)
         {
-            m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
             if (m_Movement.magnitude > 0)
             {
+                m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
+
                 Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.deltaTime, 0f);
                 m_Rotation = Quaternion.LookRotation(desiredForward);
                 m_Rigidbody.MoveRotation(m_Rotation);
+            }
+            else
+            {
+                m_Rigidbody.linearVelocity = Vector3.zero;
+                m_Rigidbody.angularVelocity = Vector3.zero;
             }
         }
         else if (isDead.Value)
@@ -174,6 +191,8 @@ public class PlayerMovement : NetworkBehaviour
             GameObject emoteInstance = Instantiate(prefab, transform.position + Vector3.up * 2.5f, Quaternion.identity);
             var textComp = emoteInstance.GetComponentInChildren<TextMeshProUGUI>();
             if (textComp != null) textComp.text = emoteName;
+
+            // Spawn logic for non-netcode objects handles itself (Destroy timer)
         }
     }
 
@@ -232,7 +251,7 @@ public class PlayerMovement : NetworkBehaviour
 
             if (IsServer && GameManager.Instance != null)
             {
-                GameManager.Instance.OnPlayerDied(OwnerClientId);
+                // Ensure GameManager knows, though RPC probably handled it
             }
         }
     }
@@ -252,6 +271,23 @@ public class PlayerMovement : NetworkBehaviour
                 Color c = r.material.color;
                 c.a = 0.3f;
                 r.material.color = c;
+            }
+        }
+
+        // --- NEW: Spawn Dead Body on Server ---
+        if (IsServer && deadBodyPrefab != null)
+        {
+            GameObject body = Instantiate(deadBodyPrefab, transform.position, transform.rotation);
+            // Lay it flat
+            body.transform.Rotate(-90, 0, 0);
+
+            NetworkObject bodyNetObj = body.GetComponent<NetworkObject>();
+            bodyNetObj.Spawn();
+
+            DeadBody bodyScript = body.GetComponent<DeadBody>();
+            if (bodyScript != null)
+            {
+                bodyScript.SetupBody(PlayerNum.Value);
             }
         }
     }

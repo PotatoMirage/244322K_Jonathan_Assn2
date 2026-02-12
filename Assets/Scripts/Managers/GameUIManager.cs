@@ -9,6 +9,7 @@ public class GameUIManager : NetworkBehaviour
     public GameObject gamePanel;
     public TextMeshProUGUI roleText;
     public TextMeshProUGUI timerText;
+    public GameObject timerTextPanel;
     public Slider taskSlider;
     public TextMeshProUGUI taskCountText;
 
@@ -25,6 +26,7 @@ public class GameUIManager : NetworkBehaviour
         if (crewmateWinScreen) crewmateWinScreen.SetActive(false);
         if (impostorWinScreen) impostorWinScreen.SetActive(false);
         if (gamePanel) gamePanel.SetActive(true);
+        timerTextPanel.SetActive(true);
 
         // --- NEW: Hide interaction text on start ---
         if (interactionText != null) interactionText.gameObject.SetActive(false);
@@ -57,12 +59,12 @@ public class GameUIManager : NetworkBehaviour
         if (!GameManager.Instance.IsGameActive.Value)
         {
             float time = Mathf.Ceil(GameManager.Instance.CountdownTimer.Value);
-            timerText.text = time > 0 ? $"Starting in: {time}" : "GO!";
+            timerText.text = time > 0 ? $"Game Starting in: {time}" : "GO!";
         }
         else
         {
             timerText.text = "";
-
+            timerTextPanel.SetActive(false);
             // 2. Update Role
             if (NetworkManager.Singleton.LocalClient != null &&
                 NetworkManager.Singleton.LocalClient.PlayerObject != null)
