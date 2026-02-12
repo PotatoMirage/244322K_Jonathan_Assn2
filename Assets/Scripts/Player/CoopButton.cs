@@ -22,11 +22,10 @@ public class CoopButton : Interactable
     public override void OnInteract(ulong interactorId)
     {
         if (!IsServer) return;
-
         IsPressed.Value = !IsPressed.Value;
     }
 
-    private void OnPressStateChanged(bool previous, bool current)
+    private void OnPressStateChanged(bool prev, bool current)
     {
         UpdateVisuals(current);
     }

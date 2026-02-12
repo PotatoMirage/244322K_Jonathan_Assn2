@@ -6,11 +6,11 @@ public class CoopDoor : NetworkBehaviour
     [Header("References")]
     public CoopButton button1;
     public CoopButton button2;
-    public Transform doorModel; // Assign the PARENT object here
+    public Transform doorModel;
 
     [Header("Settings")]
     public float rotateSpeed = 2.0f;
-    public Vector3 openRotation = new Vector3(0, -100, 0); // Target Y rotation
+    public Vector3 openRotation = new Vector3(0, -100, 0);
 
     private Quaternion closedRotation;
     private Quaternion targetRotation;
@@ -32,7 +32,6 @@ public class CoopDoor : NetworkBehaviour
             if (button1 != null) button1.IsPressed.OnValueChanged += CheckDoorCondition;
             if (button2 != null) button2.IsPressed.OnValueChanged += CheckDoorCondition;
         }
-
         isDoorOpen.OnValueChanged += OnDoorStateChanged;
     }
 
@@ -49,26 +48,15 @@ public class CoopDoor : NetworkBehaviour
     private void CheckDoorCondition(bool prev, bool current)
     {
         if (!IsServer) return;
-
         bool b1 = button1 != null && button1.IsPressed.Value;
         bool b2 = button2 != null && button2.IsPressed.Value;
-
         isDoorOpen.Value = (b1 && b2);
     }
 
-    private void OnDoorStateChanged(bool previous, bool isOpen)
+    private void OnDoorStateChanged(bool prev, bool isOpen)
     {
         if (doorModel == null) return;
-
-        if (isOpen)
-        {
-            // Calculate rotation based on the initial closed rotation + the offset
-            targetRotation = closedRotation * Quaternion.Euler(openRotation);
-        }
-        else
-        {
-            targetRotation = closedRotation;
-        }
+        targetRotation = isOpen ? closedRotation * Quaternion.Euler(openRotation) : closedRotation;
     }
 
     private void Update()

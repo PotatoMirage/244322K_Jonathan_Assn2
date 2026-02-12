@@ -13,36 +13,44 @@ public class HidingSpot : Interactable
         if (occupantId.Value == ulong.MaxValue)
         {
             occupantId.Value = interactorId;
-            SetPlayerHiddenClientRpc(interactorId, true, transform.position);
+            SetPlayerHiddenClientRpc(interactorId, true);
         }
         else if (occupantId.Value == interactorId)
         {
             occupantId.Value = ulong.MaxValue;
-            SetPlayerHiddenClientRpc(interactorId, false, exitPoint.position);
+            SetPlayerHiddenClientRpc(interactorId, false);
         }
     }
 
     [Rpc(SendTo.ClientsAndHost)]
-    private void SetPlayerHiddenClientRpc(ulong targetId, bool isHidden, Vector3 position)
+    private void SetPlayerHiddenClientRpc(ulong targetId, bool isHidden)
     {
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(targetId, out NetworkClient client))
         {
-            var playerObj = client.PlayerObject;
-            if (playerObj != null)
+            if (client.PlayerObject != null)
             {
-                playerObj.transform.position = position;
+                var playerTransform = client.PlayerObject.transform;
+                var rb = client.PlayerObject.GetComponent<Rigidbody>();
+                var col = client.PlayerObject.GetComponent<Collider>();
+                var movement = client.PlayerObject.GetComponent<PlayerMovement>();
+                var renderers = client.PlayerObject.GetComponentsInChildren<Renderer>();
 
-                var renderers = playerObj.GetComponentsInChildren<Renderer>();
-                foreach (var r in renderers) r.enabled = !isHidden;
-
-                var col = playerObj.GetComponent<Collider>();
-                if (col != null) col.enabled = !isHidden;
-
-                var rb = playerObj.GetComponent<Rigidbody>();
-                if (rb != null) rb.isKinematic = isHidden;
-
-                var movement = playerObj.GetComponent<PlayerMovement>();
-                if (movement != null) movement.enabled = !isHidden;
+                if (isHidden)
+                {
+                    playerTransform.position = transform.position;
+                    if (rb) rb.isKinematic = true;
+                    if (col) col.enabled = false;
+                    if (movement) movement.enabled = false;
+                    foreach (var r in renderers) r.enabled = false;
+                }
+                else
+                {
+                    playerTransform.position = exitPoint.position;
+                    if (rb) rb.isKinematic = false;
+                    if (col) col.enabled = true;
+                    if (movement) movement.enabled = true;
+                    foreach (var r in renderers) r.enabled = true;
+                }
             }
         }
     }

@@ -5,84 +5,56 @@ public class PlayerInteraction : NetworkBehaviour
 {
     public float interactRange = 2.5f;
     public LayerMask interactLayer;
-
     private GameUIManager uiManager;
     private Interactable currentInteractable;
-
-    public override void OnNetworkSpawn()
-    {
-        uiManager = FindFirstObjectByType<GameUIManager>();
-        if (uiManager == null) Debug.LogError("⚠ PLAYER CANNOT FIND GAMEUIManager!");
-    }
 
     private void Update()
     {
         if (!IsOwner) return;
 
-        if (uiManager == null)
-        {
-            uiManager = FindFirstObjectByType<GameUIManager>();
-        }
+        if (uiManager == null) uiManager = FindFirstObjectByType<GameUIManager>();
 
-        HandleInteractionHighlight();
+        HandleHighlight();
 
-        if (Input.GetKeyDown(KeyCode.E))
+        if (Input.GetKeyDown(KeyCode.E) && currentInteractable != null)
         {
-            TryInteract();
+            InteractServerRpc(currentInteractable.NetworkObjectId);
         }
     }
 
-    private void HandleInteractionHighlight()
+    private void HandleHighlight()
     {
-        Collider[] colliders = Physics.OverlapSphere(transform.position, interactRange, interactLayer);
-        Interactable closestInteractable = null;
-        float closestDistance = float.MaxValue;
+        Collider[] hits = Physics.OverlapSphere(transform.position, interactRange, interactLayer);
+        Interactable closest = null;
+        float closeDist = float.MaxValue;
 
-        foreach (var collider in colliders)
+        foreach (var hit in hits)
         {
-            // Try to find the script on the object or its parent
-            Interactable interactable = collider.GetComponent<Interactable>();
-            if (interactable == null) interactable = collider.GetComponentInParent<Interactable>();
-
+            Interactable interactable = hit.GetComponent<Interactable>() ?? hit.GetComponentInParent<Interactable>();
             if (interactable != null)
             {
-                float distance = Vector3.Distance(transform.position, interactable.transform.position);
-                if (distance < closestDistance)
+                float d = Vector3.Distance(transform.position, interactable.transform.position);
+                if (d < closeDist)
                 {
-                    closestDistance = distance;
-                    closestInteractable = interactable;
+                    closeDist = d;
+                    closest = interactable;
                 }
             }
         }
 
-        // Only update if something changed
-        if (closestInteractable != currentInteractable)
+        if (closest != currentInteractable)
         {
-            currentInteractable = closestInteractable;
-
-            if (uiManager != null)
-            {
-                string msg = currentInteractable != null ? currentInteractable.promptMessage : "";
-                uiManager.UpdateInteractionText(msg);
-            }
-        }
-    }
-
-    private void TryInteract()
-    {
-        if (currentInteractable != null)
-        {
-            InteractServerRpc(currentInteractable.GetComponent<NetworkObject>().NetworkObjectId);
+            currentInteractable = closest;
+            if (uiManager != null) uiManager.UpdateInteractionText(currentInteractable != null ? currentInteractable.promptMessage : "");
         }
     }
 
     [Rpc(SendTo.Server)]
-    private void InteractServerRpc(ulong objectId)
+    private void InteractServerRpc(ulong objId)
     {
-        if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(objectId, out NetworkObject netObj))
+        if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(objId, out NetworkObject obj))
         {
-            Interactable interactable = netObj.GetComponent<Interactable>();
-            if (interactable != null)
+            if (obj.TryGetComponent<Interactable>(out var interactable))
             {
                 interactable.OnInteract(OwnerClientId);
             }

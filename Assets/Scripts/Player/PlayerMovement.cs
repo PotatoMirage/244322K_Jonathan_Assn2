@@ -1,30 +1,32 @@
-﻿using Unity.Cinemachine;
+﻿using System.Collections.Generic;
+using TMPro;
+using Unity.Cinemachine;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TMPro;
 
 public class PlayerMovement : NetworkBehaviour
 {
     public float turnSpeed = 20f;
     public float moveSpeed = 5f;
     public float ghostSpeed = 8f;
-
     public float killRange = 2.0f;
-
-    // --- NEW: Reference to the DeadBody Prefab ---
     public GameObject deadBodyPrefab;
+    public Renderer[] playerRenderers;
+    public Collider playerCollider;
+    public Material ghostMaterial;
 
-    Animator m_Animator;
-    Rigidbody m_Rigidbody;
-    AudioSource m_AudioSource;
-    Vector3 m_Movement;
-    Quaternion m_Rotation = Quaternion.identity;
+    private Animator m_Animator;
+    private Rigidbody m_Rigidbody;
+    private Vector3 m_Movement;
+    private Quaternion m_Rotation = Quaternion.identity;
+    private static readonly int IsWalkingHash = Animator.StringToHash("IsWalking");
 
     public NetworkVariable<int> PlayerNum = new NetworkVariable<int>();
     public NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
+    private NetworkVariable<bool> netIsWalking = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
-    private NetworkVariable<bool> netIsWalking = new(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    private Dictionary<Renderer, Material[]> originalMaterials = new Dictionary<Renderer, Material[]>();
 
     public override void OnNetworkSpawn()
     {
@@ -33,10 +35,13 @@ public class PlayerMovement : NetworkBehaviour
 
         isDead.OnValueChanged += OnDeathStateChanged;
         SceneManager.sceneLoaded += OnSceneLoaded;
+
+        StoreOriginalMaterials();
     }
 
     public override void OnNetworkDespawn()
     {
+        isDead.OnValueChanged -= OnDeathStateChanged;
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
@@ -47,93 +52,226 @@ public class PlayerMovement : NetworkBehaviour
 
     private void FindMyCamera()
     {
-        if (!IsOwner) return;
-
         var virtualCamera = FindAnyObjectByType<CinemachineCamera>();
         if (virtualCamera != null)
         {
             virtualCamera.Follow = transform;
             virtualCamera.LookAt = transform;
         }
-
-        if (SceneManager.GetActiveScene().name == "MainScene")
-        {
-            SpawnPoint[] points = FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None);
-
-            if (points.Length > 0)
-            {
-                int index = (int)OwnerClientId % points.Length;
-                transform.position = points[index].transform.position;
-                transform.rotation = points[index].transform.rotation;
-            }
-            if (m_Rigidbody != null) m_Rigidbody.linearVelocity = Vector3.zero;
-        }
     }
 
-    void Start()
+    private void Start()
     {
         m_Animator = GetComponent<Animator>();
         m_Rigidbody = GetComponent<Rigidbody>();
-        m_AudioSource = GetComponent<AudioSource>();
     }
-
-    void Update()
+    private void StoreOriginalMaterials()
     {
-        // Disable movement during Meeting
-        if (GameManager.Instance != null && GameManager.Instance.IsMeetingActive.Value)
+        foreach (var r in playerRenderers)
         {
-            m_Animator.SetBool("IsWalking", false);
-            return;
+            if (r != null) originalMaterials[r] = r.sharedMaterials;
         }
-
-        if (GameManager.Instance != null && !GameManager.Instance.IsGameActive.Value && !isDead.Value)
+    }
+    private void Update()
+    {
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value)
         {
-            m_Animator.SetBool("IsWalking", false);
+            m_Animator.SetBool(IsWalkingHash, false);
             return;
         }
 
         if (IsOwner)
         {
             HandleInput();
-            HandleEmotes();
+            if (Input.GetKeyDown(KeyCode.Space) && IsImpostor() && !isDead.Value) TryKillTarget();
         }
 
         UpdateAnimationState();
     }
 
-    void HandleInput()
+    private void FixedUpdate()
     {
-        float horizontal = Input.GetAxisRaw("Horizontal");
-        float vertical = Input.GetAxisRaw("Vertical");
+        if (!IsOwner) return;
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value) return;
 
-        m_Movement.Set(horizontal, 0f, vertical);
-        m_Movement.Normalize();
+        float speed = isDead.Value ? ghostSpeed : moveSpeed;
+        Vector3 desiredMove = m_Movement * speed * Time.fixedDeltaTime;
 
-        bool moving = m_Movement.magnitude > 0.01f;
-        if (netIsWalking.Value != moving) netIsWalking.Value = moving;
-
-        if (Input.GetKeyDown(KeyCode.Space) && IsImpostor() && !isDead.Value)
+        if (isDead.Value)
         {
-            TryKillTarget();
+            m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
+        }
+        else if (m_Movement.sqrMagnitude > 0)
+        {
+            m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
+            Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.fixedDeltaTime, 0f);
+            m_Rotation = Quaternion.LookRotation(desiredForward);
+            m_Rigidbody.MoveRotation(m_Rotation);
+        }
+        else
+        {
+            m_Rigidbody.linearVelocity = Vector3.zero;
+            m_Rigidbody.angularVelocity = Vector3.zero;
         }
     }
 
-    void HandleEmotes()
+    private void HandleInput()
     {
-        if (Input.GetKeyDown(KeyCode.Alpha1)) PlayEmoteServerRpc("😀");
-        if (Input.GetKeyDown(KeyCode.Alpha2)) PlayEmoteServerRpc("😂");
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
+        m_Movement.Set(h, 0f, v);
+        m_Movement.Normalize();
+
+        bool moving = m_Movement.sqrMagnitude > 0.01f;
+        if (netIsWalking.Value != moving) netIsWalking.Value = moving;
     }
 
-    void UpdateAnimationState()
+    private void UpdateAnimationState()
     {
         if (isDead.Value)
         {
-            m_Animator.SetBool("IsWalking", false);
+            m_Animator.SetBool(IsWalkingHash, false);
             return;
         }
-        m_Animator.SetBool("IsWalking", netIsWalking.Value);
+        m_Animator.SetBool(IsWalkingHash, netIsWalking.Value);
     }
 
+    private bool IsImpostor()
+    {
+        return GameManager.Instance != null && GameManager.Instance.ImpostorId.Value == OwnerClientId;
+    }
+    
+    private void TryKillTarget()
+    {
+        Collider[] hits = Physics.OverlapSphere(transform.position, killRange);
+
+        foreach (var hit in hits)
+        {
+            if (hit.TryGetComponent<PlayerMovement>(out var target))
+            {
+                if (target != this && !target.isDead.Value)
+                {
+                    KillPlayerServerRpc(target.OwnerClientId);
+                    return;
+                }
+            }
+        }
+    }
+
+    [Rpc(SendTo.Server)]
+    private void KillPlayerServerRpc(ulong targetId)
+    {
+        if (!IsImpostor() || GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay) return;
+
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(targetId, out NetworkClient client))
+        {
+            var target = client.PlayerObject.GetComponent<PlayerMovement>();
+            if (target != null && !target.isDead.Value)
+            {
+                if (Vector3.Distance(transform.position, target.transform.position) <= killRange + 1f)
+                {
+                    target.isDead.Value = true;
+                    GameManager.Instance.OnPlayerDied(targetId);
+                }
+            }
+        }
+    }
+
+    private void OnDeathStateChanged(bool prev, bool current)
+    {
+        if (current) HandleDeath();
+        foreach (var p in FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None))
+        {
+            p.RefreshVisibility();
+        }
+    }
+
+    private void HandleDeath()
+    {
+        if (m_Animator) m_Animator.SetBool(IsWalkingHash, false);
+        if (playerCollider != null) playerCollider.enabled = false;
+
+        if (m_Rigidbody)
+        {
+            m_Rigidbody.useGravity = false;
+            m_Rigidbody.isKinematic = true;
+            m_Rigidbody.linearVelocity = Vector3.zero;
+        }
+
+
+        if (IsServer && deadBodyPrefab != null)
+        {
+            GameObject body = Instantiate(deadBodyPrefab, transform.position, transform.rotation);
+            body.transform.Rotate(-90, 0, 0);
+            body.GetComponent<NetworkObject>().Spawn();
+            body.GetComponent<DeadBody>().SetupBody(PlayerNum.Value);
+        }
+
+    }
+    public void RefreshVisibility()
+    {
+        // Calculate visibility based on the LOCAL player's state
+        if (NetworkManager.Singleton == null || NetworkManager.Singleton.LocalClient == null || NetworkManager.Singleton.LocalClient.PlayerObject == null) return;
+
+        var localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
+        bool amILocal = IsOwner;
+        bool isLocalDead = localPlayer.isDead.Value;
+        bool thisPlayerIsDead = isDead.Value;
+
+        if (!thisPlayerIsDead)
+        {
+            // Alive players are always visible to everyone
+            SetRenderersVisible(true, false);
+        }
+        else
+        {
+            // This is a ghost. 
+            // Visible ONLY IF: I am the owner OR I am also dead (Ghost sees Ghost)
+            bool shouldSee = amILocal || isLocalDead;
+            SetRenderersVisible(shouldSee, true);
+        }
+    }
+    private void SetRenderersVisible(bool visible, bool isGhostMaterial)
+    {
+        foreach (var r in playerRenderers)
+        {
+            if (r == null) continue;
+
+            r.enabled = visible;
+
+            if (visible && isGhostMaterial && ghostMaterial != null)
+            {
+                // Apply Ghost Material
+                Material[] ghostMats = new Material[r.sharedMaterials.Length];
+                for (int i = 0; i < ghostMats.Length; i++) ghostMats[i] = ghostMaterial;
+                r.materials = ghostMats;
+            }
+            else if (visible && !isGhostMaterial && originalMaterials.ContainsKey(r))
+            {
+                // Restore Original Material
+                r.materials = originalMaterials[r];
+            }
+        }
+    }
+    public void TeleportTo(Vector3 pos)
+    {
+        if (IsServer)
+        {
+            transform.position = pos;
+            TeleportClientRpc(pos);
+        }
+    }
+
+    [Rpc(SendTo.ClientsAndHost)]
+    private void TeleportClientRpc(Vector3 pos)
+    {
+        transform.position = pos;
+        if (TryGetComponent<Rigidbody>(out var rb))
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
+    }
     void OnAnimatorMove()
     {
         if (!IsOwner) return;
@@ -142,153 +280,6 @@ public class PlayerMovement : NetworkBehaviour
         {
             m_Rigidbody.MovePosition(m_Rigidbody.position + m_Movement * m_Animator.deltaPosition.magnitude);
             m_Rigidbody.MoveRotation(m_Rotation);
-        }
-    }
-
-    void FixedUpdate()
-    {
-        if (GameManager.Instance != null && GameManager.Instance.IsMeetingActive.Value) return;
-        if (GameManager.Instance != null && !GameManager.Instance.IsGameActive.Value && !isDead.Value) return;
-        if (!IsOwner) return;
-
-        float currentSpeed = isDead.Value ? ghostSpeed : moveSpeed;
-        Vector3 desiredMove = m_Movement * currentSpeed * Time.deltaTime;
-
-        if (m_Rigidbody != null && !m_Rigidbody.isKinematic)
-        {
-            if (m_Movement.magnitude > 0)
-            {
-                m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
-
-                Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.deltaTime, 0f);
-                m_Rotation = Quaternion.LookRotation(desiredForward);
-                m_Rigidbody.MoveRotation(m_Rotation);
-            }
-            else
-            {
-                m_Rigidbody.linearVelocity = Vector3.zero;
-                m_Rigidbody.angularVelocity = Vector3.zero;
-            }
-        }
-        else if (isDead.Value)
-        {
-            transform.position += desiredMove;
-        }
-    }
-
-    [Rpc(SendTo.Server)]
-    void PlayEmoteServerRpc(string emoteName)
-    {
-        PlayEmoteClientRpc(emoteName);
-    }
-
-    [Rpc(SendTo.ClientsAndHost)]
-    void PlayEmoteClientRpc(string emoteName)
-    {
-        GameObject prefab = Resources.Load<GameObject>("EmoteBubble");
-        if (prefab != null)
-        {
-            GameObject emoteInstance = Instantiate(prefab, transform.position + Vector3.up * 2.5f, Quaternion.identity);
-            var textComp = emoteInstance.GetComponentInChildren<TextMeshProUGUI>();
-            if (textComp != null) textComp.text = emoteName;
-
-            // Spawn logic for non-netcode objects handles itself (Destroy timer)
-        }
-    }
-
-    bool IsImpostor()
-    {
-        if (GameManager.Instance == null) return false;
-        return GameManager.Instance.ImpostorId.Value == OwnerClientId;
-    }
-
-    void TryKillTarget()
-    {
-        Collider[] hitColliders = Physics.OverlapSphere(transform.position, killRange);
-        foreach (var hitCollider in hitColliders)
-        {
-            PlayerMovement target = hitCollider.GetComponent<PlayerMovement>();
-            if (target != null && target != this && !target.isDead.Value)
-            {
-                KillPlayerServerRpc(target.OwnerClientId);
-                return;
-            }
-        }
-    }
-
-    [Rpc(SendTo.Server)]
-    void KillPlayerServerRpc(ulong targetId)
-    {
-        if (!IsImpostor() || !GameManager.Instance.IsGameActive.Value) return;
-
-        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(targetId, out NetworkClient client))
-        {
-            PlayerMovement targetScript = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (targetScript != null && !targetScript.isDead.Value)
-            {
-                float distance = Vector3.Distance(transform.position, targetScript.transform.position);
-                if (distance <= killRange + 1.0f)
-                {
-                    targetScript.isDead.Value = true;
-                    targetScript.CallCaughtPlayerClientRPC();
-                    GameManager.Instance.OnPlayerDied(targetId);
-                }
-            }
-        }
-    }
-
-    [Rpc(SendTo.ClientsAndHost)]
-    public void CallCaughtPlayerClientRPC()
-    {
-        // Handled by OnDeathStateChanged
-    }
-
-    private void OnDeathStateChanged(bool previous, bool current)
-    {
-        if (current)
-        {
-            HandleDeath();
-
-            if (IsServer && GameManager.Instance != null)
-            {
-                // Ensure GameManager knows, though RPC probably handled it
-            }
-        }
-    }
-
-    private void HandleDeath()
-    {
-        m_Animator.SetBool("IsWalking", false);
-
-        if (GetComponent<Collider>()) GetComponent<Collider>().enabled = false;
-        if (m_Rigidbody) m_Rigidbody.isKinematic = true;
-
-        if (!IsOwner)
-        {
-            var renderers = GetComponentsInChildren<Renderer>();
-            foreach (var r in renderers)
-            {
-                Color c = r.material.color;
-                c.a = 0.3f;
-                r.material.color = c;
-            }
-        }
-
-        // --- NEW: Spawn Dead Body on Server ---
-        if (IsServer && deadBodyPrefab != null)
-        {
-            GameObject body = Instantiate(deadBodyPrefab, transform.position, transform.rotation);
-            // Lay it flat
-            body.transform.Rotate(-90, 0, 0);
-
-            NetworkObject bodyNetObj = body.GetComponent<NetworkObject>();
-            bodyNetObj.Spawn();
-
-            DeadBody bodyScript = body.GetComponent<DeadBody>();
-            if (bodyScript != null)
-            {
-                bodyScript.SetupBody(PlayerNum.Value);
-            }
         }
     }
 }

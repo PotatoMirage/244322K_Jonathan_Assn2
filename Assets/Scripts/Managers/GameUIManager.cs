@@ -12,75 +12,68 @@ public class GameUIManager : NetworkBehaviour
     public GameObject timerTextPanel;
     public Slider taskSlider;
     public TextMeshProUGUI taskCountText;
-
-    // --- NEW: Add this variable ---
-    [Header("Interaction")]
     public TextMeshProUGUI interactionText;
 
     [Header("End Game Screens")]
     public GameObject crewmateWinScreen;
     public GameObject impostorWinScreen;
 
+    [Header("Host Controls")]
+    public Button restartButton;
+
     private void Start()
     {
         if (crewmateWinScreen) crewmateWinScreen.SetActive(false);
         if (impostorWinScreen) impostorWinScreen.SetActive(false);
         if (gamePanel) gamePanel.SetActive(true);
-        timerTextPanel.SetActive(true);
+        if (timerTextPanel) timerTextPanel.SetActive(true);
+        if (interactionText) interactionText.gameObject.SetActive(false);
+        if (restartButton) restartButton.gameObject.SetActive(false);
+    }
 
-        // --- NEW: Hide interaction text on start ---
-        if (interactionText != null) interactionText.gameObject.SetActive(false);
+    public override void OnNetworkSpawn()
+    {
+        if (restartButton != null)
+        {
+            restartButton.onClick.AddListener(() =>
+            {
+                if (IsServer) GameManager.Instance.RestartToLobby();
+            });
+        }
     }
 
     public void UpdateInteractionText(string message)
     {
-        if (interactionText == null)
-        {
-            Debug.LogError("⚠ Interaction Text is missing in Inspector on GameUIManager!");
-            return;
-        }
-
-        if (string.IsNullOrEmpty(message))
-        {
-            interactionText.gameObject.SetActive(false);
-        }
-        else
-        {
-            interactionText.text = message;
-            interactionText.gameObject.SetActive(true);
-        }
+        if (interactionText == null) return;
+        interactionText.text = message;
+        interactionText.gameObject.SetActive(!string.IsNullOrEmpty(message));
     }
 
     private void Update()
     {
         if (GameManager.Instance == null) return;
 
-        // 1. Update Timer
-        if (!GameManager.Instance.IsGameActive.Value)
+        // 1. Update Timer & Lobby State
+        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Lobby)
         {
-            float time = Mathf.Ceil(GameManager.Instance.CountdownTimer.Value);
-            timerText.text = time > 0 ? $"Game Starting in: {time}" : "GO!";
+            float time = Mathf.Ceil(GameManager.Instance.StateTimer.Value);
+            if (timerText) timerText.text = time > 0 ? $"Game Starting in: {time}" : "GO!";
+            if (timerTextPanel) timerTextPanel.SetActive(true);
         }
         else
         {
-            timerText.text = "";
-            timerTextPanel.SetActive(false);
-            // 2. Update Role
+            if (timerText) timerText.text = "";
+            if (timerTextPanel) timerTextPanel.SetActive(false);
+
+            // 2. Update Role (Only show once game starts)
             if (NetworkManager.Singleton.LocalClient != null &&
                 NetworkManager.Singleton.LocalClient.PlayerObject != null)
             {
-                ulong myId = NetworkManager.Singleton.LocalClientId;
-                bool isImpostor = GameManager.Instance.ImpostorId.Value == myId;
-
-                if (isImpostor)
+                bool isImpostor = GameManager.Instance.ImpostorId.Value == NetworkManager.Singleton.LocalClientId;
+                if (roleText)
                 {
-                    roleText.text = "IMPOSTOR";
-                    roleText.color = Color.red;
-                }
-                else
-                {
-                    roleText.text = "CREWMATE";
-                    roleText.color = Color.cyan;
+                    roleText.text = isImpostor ? "IMPOSTOR" : "CREWMATE";
+                    roleText.color = isImpostor ? Color.red : Color.cyan;
                 }
             }
         }
@@ -88,22 +81,22 @@ public class GameUIManager : NetworkBehaviour
         // 3. Update Task Slider
         float current = GameManager.Instance.CompletedTasks.Value;
         float total = GameManager.Instance.TotalTasks.Value;
-
-        if (taskSlider != null && total > 0)
-        {
-            taskSlider.value = current / total;
-        }
-        if (taskCountText != null)
-        {
-            taskCountText.text = $"Tasks: {current}/{total}";
-        }
+        if (taskSlider && total > 0) taskSlider.value = current / total;
+        if (taskCountText) taskCountText.text = $"Tasks: {current}/{total}";
 
         // 4. Handle End Screens
-        if (GameManager.Instance.GameResult.Value != 0)
+        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Ended)
         {
-            gamePanel.SetActive(false);
-            if (GameManager.Instance.GameResult.Value == 1) crewmateWinScreen.SetActive(true);
-            if (GameManager.Instance.GameResult.Value == 2) impostorWinScreen.SetActive(true);
+            if (gamePanel) gamePanel.SetActive(false);
+            int result = GameManager.Instance.GameResult.Value;
+            if (crewmateWinScreen && result == 1) crewmateWinScreen.SetActive(true);
+            if (impostorWinScreen && result == 2) impostorWinScreen.SetActive(true);
+
+            // Show Restart Button only for Host
+            if (restartButton != null)
+            {
+                restartButton.gameObject.SetActive(IsServer);
+            }
         }
     }
 }

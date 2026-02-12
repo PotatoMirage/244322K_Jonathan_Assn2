@@ -21,18 +21,13 @@ public class EmergencyConsole : Interactable
 
     public override void OnInteract(ulong interactorId)
     {
-        InteractServerRpc(interactorId);
-    }
+        if (!IsServer) return;
 
-    [Rpc(SendTo.Server)]
-    private void InteractServerRpc(ulong interactorId)
-    {
         if (!manager.IsEmergencyActive.Value) return;
 
         IsBeingHeld.Value = !IsBeingHeld.Value;
         manager.CheckConsoles();
 
-        // Auto-release after 5 seconds if not synced (optional game design choice)
         if (IsBeingHeld.Value)
         {
             Invoke(nameof(ResetConsole), 5.0f);

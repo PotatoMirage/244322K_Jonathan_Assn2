@@ -7,24 +7,21 @@ public class RoleRevealUI : NetworkBehaviour
 {
     public TextMeshProUGUI roleText;
     public float displayDuration = 5f;
-
     private bool hasRevealed = false;
 
     private void Update()
     {
         if (GameManager.Instance == null) return;
 
-        // Check if game just started and we haven't shown role yet
-        if (GameManager.Instance.IsGameActive.Value && !hasRevealed)
+        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Gameplay && !hasRevealed)
         {
             ShowRole();
         }
 
-        // Hide if game is not active
-        if (!GameManager.Instance.IsGameActive.Value)
+        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Lobby)
         {
             roleText.gameObject.SetActive(false);
-            hasRevealed = false; // Reset for next round
+            hasRevealed = false;
         }
     }
 
@@ -33,17 +30,10 @@ public class RoleRevealUI : NetworkBehaviour
         hasRevealed = true;
         roleText.gameObject.SetActive(true);
 
-        ulong myId = NetworkManager.Singleton.LocalClientId;
-        bool isImpostor = (GameManager.Instance.ImpostorId.Value == myId);
-
-        if (isImpostor)
-        {
-            roleText.text = "YOU ARE THE <color=red>IMPOSTOR</color>\n\nKILL EVERYONE";
-        }
-        else
-        {
-            roleText.text = "YOU ARE A <color=#00FFFF>CREWMATE</color>\n\nCOMPLETE TASKS";
-        }
+        bool isImpostor = GameManager.Instance.ImpostorId.Value == NetworkManager.Singleton.LocalClientId;
+        roleText.text = isImpostor
+            ? "YOU ARE THE <color=red>IMPOSTOR</color>\n\nKILL EVERYONE"
+            : "YOU ARE A <color=#00FFFF>CREWMATE</color>\n\nCOMPLETE TASKS";
 
         StartCoroutine(HideTextRoutine());
     }

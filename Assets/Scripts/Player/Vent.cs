@@ -5,7 +5,7 @@ public class Vent : Interactable
 {
     [Header("Connections")]
     public Vent connectedVent;
-    public Transform spawnLocation; // Assign a child empty object where player appears
+    public Transform spawnLocation;
 
     [Header("Settings")]
     public float ventCooldown = 1.0f;
@@ -13,19 +13,12 @@ public class Vent : Interactable
 
     public override void OnInteract(ulong interactorId)
     {
-        // 1. Check Cooldown
         if (Time.time - lastVentTime < ventCooldown) return;
 
-        // 2. Server-side check: Is this player the Impostor?
         if (IsServer)
         {
-            if (GameManager.Instance.ImpostorId.Value != interactorId)
-            {
-                // Optional: Play "Access Denied" sound for Crewmates
-                return;
-            }
+            if (GameManager.Instance.ImpostorId.Value != interactorId) return;
 
-            // 3. Teleport logic
             if (connectedVent != null && connectedVent.spawnLocation != null)
             {
                 TeleportPlayer(interactorId, connectedVent.spawnLocation.position);
@@ -38,12 +31,7 @@ public class Vent : Interactable
     {
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(playerId, out NetworkClient client))
         {
-            var playerTransform = client.PlayerObject.transform;
-
-            // Disable CharacterController/Physics momentarily to prevent glitches
             client.PlayerObject.transform.position = targetPos;
-
-            // Sync with client
             TeleportClientRpc(playerId, targetPos);
         }
     }
@@ -53,10 +41,16 @@ public class Vent : Interactable
     {
         if (NetworkManager.Singleton.LocalClientId == playerId)
         {
-            transform.position = targetPos;
-            if (TryGetComponent<Rigidbody>(out var rb))
+            if (NetworkManager.Singleton.LocalClient.PlayerObject != null)
             {
-                rb.linearVelocity = Vector3.zero;
+                var playerTransform = NetworkManager.Singleton.LocalClient.PlayerObject.transform;
+                playerTransform.position = targetPos;
+
+                if (playerTransform.TryGetComponent<Rigidbody>(out var rb))
+                {
+                    rb.linearVelocity = Vector3.zero;
+                    rb.angularVelocity = Vector3.zero;
+                }
             }
         }
     }

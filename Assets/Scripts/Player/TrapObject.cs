@@ -5,7 +5,6 @@ public class TrapObject : Interactable
 {
     public float trapRadius = 4f;
     public ParticleSystem trapVFX;
-
     private bool isCooldown = false;
 
     public override void OnInteract(ulong interactorId)
@@ -24,28 +23,21 @@ public class TrapObject : Interactable
         TriggerTrapClientRpc();
 
         Collider[] hits = Physics.OverlapSphere(transform.position, trapRadius);
-
         foreach (var hit in hits)
         {
-            PlayerMovement player = hit.GetComponentInParent<PlayerMovement>();
-
-            if (player != null && !player.isDead.Value)
+            if (hit.TryGetComponent<PlayerMovement>(out var player) && !player.isDead.Value)
             {
                 if (player.OwnerClientId != GameManager.Instance.ImpostorId.Value)
                 {
-                    player.isDead.Value = true;
-                    player.CallCaughtPlayerClientRPC();
+                    player.isDead.Value = true; // This auto-triggers death logic
+                    GameManager.Instance.OnPlayerDied(player.OwnerClientId);
                 }
             }
         }
-
         Invoke(nameof(ResetTrap), 10f);
     }
 
-    private void ResetTrap()
-    {
-        isCooldown = false;
-    }
+    private void ResetTrap() => isCooldown = false;
 
     [Rpc(SendTo.ClientsAndHost)]
     private void TriggerTrapClientRpc()

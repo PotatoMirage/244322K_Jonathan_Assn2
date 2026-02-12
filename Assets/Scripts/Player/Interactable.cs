@@ -3,12 +3,16 @@ using UnityEngine;
 
 public abstract class Interactable : NetworkBehaviour
 {
-    public string promptMessage = "Press E to Interact";
+    public string promptMessage = "Press E";
 
     public abstract void OnInteract(ulong interactorId);
 
-    protected bool CheckRange(Vector3 playerPos, float range = 3.0f)
+    protected bool ValidateRange(ulong interactorId, float range = 5.0f)
     {
-        return Vector3.Distance(transform.position, playerPos) <= range;
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(interactorId, out NetworkClient client))
+        {
+            return Vector3.Distance(transform.position, client.PlayerObject.transform.position) <= range;
+        }
+        return false;
     }
 }

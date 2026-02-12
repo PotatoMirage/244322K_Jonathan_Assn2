@@ -11,7 +11,7 @@ public class EmergencyManager : NetworkBehaviour
 
     [Header("Settings")]
     public float emergencyDuration = 30f;
-    public float cooldownBetweenEmergencies = 20f; // Time before it starts randomly
+    public float cooldownBetweenEmergencies = 20f;
 
     public NetworkVariable<bool> IsEmergencyActive = new NetworkVariable<bool>(false);
     public NetworkVariable<float> TimeRemaining = new NetworkVariable<float>(30f);
@@ -20,22 +20,17 @@ public class EmergencyManager : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        if (IsServer)
-        {
-            cooldownTimer = cooldownBetweenEmergencies;
-        }
+        if (IsServer) cooldownTimer = cooldownBetweenEmergencies;
     }
 
     private void Update()
     {
         UpdateUI();
 
-        if (!IsServer) return;
+        if (!IsServer || GameManager.Instance == null) return;
 
-        // Don't run emergency if game hasn't started or is over
-        if (GameManager.Instance == null || !GameManager.Instance.IsGameActive.Value) return;
-        // Don't run emergency during meetings
-        if (GameManager.Instance.IsMeetingActive.Value)
+        // Only run during Gameplay
+        if (GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay)
         {
             IsEmergencyActive.Value = false;
             return;
@@ -44,20 +39,12 @@ public class EmergencyManager : NetworkBehaviour
         if (IsEmergencyActive.Value)
         {
             TimeRemaining.Value -= Time.deltaTime;
-
-            // --- FIX: End game if time runs out ---
-            if (TimeRemaining.Value <= 0)
-            {
-                TriggerFailure();
-            }
+            if (TimeRemaining.Value <= 0) TriggerFailure();
         }
         else
         {
             cooldownTimer -= Time.deltaTime;
-            if (cooldownTimer <= 0)
-            {
-                StartEmergency();
-            }
+            if (cooldownTimer <= 0) StartEmergency();
         }
     }
 
@@ -65,24 +52,17 @@ public class EmergencyManager : NetworkBehaviour
     {
         IsEmergencyActive.Value = true;
         TimeRemaining.Value = emergencyDuration;
-
-        // Reset console states
-        if (consoleA != null) consoleA.IsBeingHeld.Value = false;
-        if (consoleB != null) consoleB.IsBeingHeld.Value = false;
+        if (consoleA) consoleA.IsBeingHeld.Value = false;
+        if (consoleB) consoleB.IsBeingHeld.Value = false;
     }
 
     public void CheckConsoles()
     {
         if (!IsEmergencyActive.Value) return;
-
         bool a = consoleA != null && consoleA.IsBeingHeld.Value;
         bool b = consoleB != null && consoleB.IsBeingHeld.Value;
 
-        // If both are held simultaneously
-        if (a && b)
-        {
-            ResolveEmergency();
-        }
+        if (a && b) ResolveEmergency();
     }
 
     private void ResolveEmergency()
@@ -94,30 +74,20 @@ public class EmergencyManager : NetworkBehaviour
     private void TriggerFailure()
     {
         IsEmergencyActive.Value = false;
-
-        Debug.Log("Crisis Failed! Impostors Win.");
-
-        // --- FIX: Call GameManager to End the Game ---
-        if (GameManager.Instance != null)
-        {
-            GameManager.Instance.EndGame(2); // 2 = Impostor Win
-        }
+        GameManager.Instance.EndGame(2); // Impostor Win
     }
 
     private void UpdateUI()
     {
         if (warningText == null) return;
+        bool active = IsEmergencyActive.Value;
+        warningText.gameObject.SetActive(active);
 
-        if (IsEmergencyActive.Value)
+        if (active)
         {
-            warningText.gameObject.SetActive(true);
             float time = Mathf.Ceil(TimeRemaining.Value);
-            warningText.text = $"CRITICAL FAILURE DETECTED!\nRESET BOTH CONSOLES: {time}";
-            warningText.color = (time <= 10f) ? Color.red : Color.yellow;
-        }
-        else
-        {
-            warningText.gameObject.SetActive(false);
+            warningText.text = $"CRITICAL FAILURE!\nRESET BOTH CONSOLES: {time}";
+            warningText.color = time <= 10f ? Color.red : Color.yellow;
         }
     }
 }

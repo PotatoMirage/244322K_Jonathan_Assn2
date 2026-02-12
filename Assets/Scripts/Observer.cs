@@ -1,18 +1,14 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 using Unity.Netcode;
 
-public class Observer : MonoBehaviour
+public class Observer : NetworkBehaviour
 {
     public Transform player;
-    public GameEnding gameEnding;
-
     bool m_IsPlayerInRange;
 
     void OnTriggerEnter(Collider other)
     {
-        if (other.gameObject.name == "JohnLemon(Clone)")
+        if (other.GetComponent<PlayerMovement>())
         {
             player = other.transform;
             m_IsPlayerInRange = true;
@@ -21,29 +17,22 @@ public class Observer : MonoBehaviour
 
     void OnTriggerExit(Collider other)
     {
-        if (other.gameObject.name == "JohnLemon(Clone)")
-        {
-            m_IsPlayerInRange = false;
-        }
+        if (other.GetComponent<PlayerMovement>()) m_IsPlayerInRange = false;
     }
 
     void Update()
     {
-        if (!NetworkManager.Singleton.IsServer) return;
+        if (!IsServer || !m_IsPlayerInRange || player == null) return;
 
-        if (m_IsPlayerInRange)
+        Vector3 direction = player.position - transform.position + Vector3.up;
+        if (Physics.Raycast(transform.position, direction, out RaycastHit hit))
         {
-            Vector3 direction = player.position - transform.position + Vector3.up;
-            Ray ray = new(transform.position, direction);
-
-            if (Physics.Raycast(ray, out RaycastHit raycastHit))
+            if (hit.collider.transform == player)
             {
-                if (raycastHit.collider.transform == player)
+                if (player.TryGetComponent<PlayerMovement>(out var script) && !script.isDead.Value)
                 {
-                    if (player.TryGetComponent<PlayerMovement>(out PlayerMovement playerScript))
-                    {
-                        playerScript.CallCaughtPlayerClientRPC();
-                    }
+                    script.isDead.Value = true; // Auto-triggers death
+                    GameManager.Instance.OnPlayerDied(script.OwnerClientId);
                 }
             }
         }

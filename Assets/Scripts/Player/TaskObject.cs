@@ -1,44 +1,60 @@
 using Unity.Netcode;
 using UnityEngine;
+using System.Collections.Generic;
 
 public class TaskObject : Interactable
 {
-    public NetworkVariable<bool> isCompleted = new NetworkVariable<bool>(false);
     public MeshRenderer taskRenderer;
     public Material completeMat;
     public Material incompleteMat;
+
+    private HashSet<ulong> completedPlayers = new HashSet<ulong>();
 
     public override void OnNetworkSpawn()
     {
         if (IsServer)
         {
-            GameManager.Instance.RegisterTask();
+            GameManager.Instance.RegisterTask(this);
         }
-        isCompleted.OnValueChanged += OnStateChanged;
-        UpdateVisuals(isCompleted.Value);
+        // Default visual state
+        if (taskRenderer != null) taskRenderer.material = incompleteMat;
+    }
+
+    public void ResetTask()
+    {
+        completedPlayers.Clear();
+        ResetVisualsClientRpc();
     }
 
     public override void OnInteract(ulong interactorId)
     {
-        if (!IsServer || isCompleted.Value) return;
+        if (!IsServer) return;
 
-        if (GameManager.Instance.ImpostorId.Value != interactorId)
+        if (GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay) return;
+
+        // Impostors cannot do tasks (or fake them, but they don't count)
+        if (GameManager.Instance.ImpostorId.Value == interactorId) return;
+
+        // If this specific player hasn't done this task yet
+        if (!completedPlayers.Contains(interactorId))
         {
-            isCompleted.Value = true;
-            GameManager.Instance.CompleteTask();
+            completedPlayers.Add(interactorId);
+            GameManager.Instance.CompleteTask(interactorId);
+
+            // Tell ONLY this client to update their visual to "Done"
+            SetCompleteClientRpc(RpcTarget.Single(interactorId, RpcTargetUse.Temp));
         }
     }
 
-    private void OnStateChanged(bool prev, bool current)
+    [Rpc(SendTo.SpecifiedInParams)]
+    private void SetCompleteClientRpc(RpcParams rpcParams = default)
     {
-        UpdateVisuals(current);
+        if (taskRenderer != null) taskRenderer.material = completeMat;
     }
 
-    private void UpdateVisuals(bool complete)
+    [Rpc(SendTo.ClientsAndHost)]
+    private void ResetVisualsClientRpc()
     {
-        if (taskRenderer != null)
-        {
-            taskRenderer.material = complete ? completeMat : incompleteMat;
-        }
+        if (taskRenderer != null) taskRenderer.material = incompleteMat;
     }
 }
