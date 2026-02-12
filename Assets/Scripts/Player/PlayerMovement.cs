@@ -1,10 +1,12 @@
 ﻿using System.Collections.Generic;
-using TMPro;
 using Unity.Cinemachine;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+[RequireComponent(typeof(NetworkTransform))]
+[RequireComponent(typeof(Rigidbody))]
 public class PlayerMovement : NetworkBehaviour
 {
     public float turnSpeed = 20f;
@@ -24,7 +26,8 @@ public class PlayerMovement : NetworkBehaviour
 
     public NetworkVariable<int> PlayerNum = new NetworkVariable<int>();
     public NetworkVariable<bool> isDead = new NetworkVariable<bool>(false);
-    private NetworkVariable<bool> netIsWalking = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+    private NetworkVariable<bool> netIsWalking = new NetworkVariable<bool>(false);
 
     private Dictionary<Renderer, Material[]> originalMaterials = new Dictionary<Renderer, Material[]>();
 
@@ -65,6 +68,7 @@ public class PlayerMovement : NetworkBehaviour
         m_Animator = GetComponent<Animator>();
         m_Rigidbody = GetComponent<Rigidbody>();
     }
+
     private void StoreOriginalMaterials()
     {
         foreach (var r in playerRenderers)
@@ -72,27 +76,73 @@ public class PlayerMovement : NetworkBehaviour
             if (r != null) originalMaterials[r] = r.sharedMaterials;
         }
     }
+
     private void Update()
     {
-        if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value)
-        {
-            m_Animator.SetBool(IsWalkingHash, false);
-            return;
-        }
+        // 1. Visuals / Animation (Run on everyone)
+        UpdateAnimationState();
 
+        // 2. Input (Run only on Owner)
         if (IsOwner)
         {
             HandleInput();
             if (Input.GetKeyDown(KeyCode.Space) && IsImpostor() && !isDead.Value) TryKillTarget();
         }
-
-        UpdateAnimationState();
     }
 
     private void FixedUpdate()
     {
-        if (!IsOwner) return;
-        if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value) return;
+        // STRICT SERVER AUTHORITY: Only Server moves the Rigidbody
+        if (IsServer)
+        {
+            float speed = isDead.Value ? ghostSpeed : moveSpeed;
+            Vector3 targetMove = m_Movement * speed * Time.fixedDeltaTime;
+
+            if (m_Movement.sqrMagnitude > 0.01f)
+            {
+                m_Rigidbody.MovePosition(m_Rigidbody.position + targetMove);
+
+                // Rotation
+                Vector3 desiredFwd = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.fixedDeltaTime, 0f);
+                m_Rigidbody.MoveRotation(Quaternion.LookRotation(desiredFwd));
+            }
+        }
+    }
+
+    private void HandleInput()
+    {
+        if (isDead.Value && !IsServer) return;
+
+        float h = Input.GetAxisRaw("Horizontal");
+        float v = Input.GetAxisRaw("Vertical");
+        Vector2 input = new Vector2(h, v);
+
+        // ERROR FIXED: We do NOT write to netIsWalking here anymore.
+        // We only send the input to the server.
+        SubmitInputServerRpc(input);
+    }
+
+    [Rpc(SendTo.Server)]
+    private void SubmitInputServerRpc(Vector2 input)
+    {
+        m_Movement.Set(input.x, 0f, input.y);
+
+        // SERVER AUTHORITY: The Server decides if the player is walking
+        bool isMoving = m_Movement.sqrMagnitude > 0.01f;
+        if (netIsWalking.Value != isMoving)
+        {
+            netIsWalking.Value = isMoving;
+        }
+    }
+
+    private void ProcessMovement()
+    {
+        if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value)
+        {
+            m_Rigidbody.linearVelocity = Vector3.zero;
+            m_Rigidbody.angularVelocity = Vector3.zero;
+            return;
+        }
 
         float speed = isDead.Value ? ghostSpeed : moveSpeed;
         Vector3 desiredMove = m_Movement * speed * Time.fixedDeltaTime;
@@ -115,32 +165,17 @@ public class PlayerMovement : NetworkBehaviour
         }
     }
 
-    private void HandleInput()
-    {
-        float h = Input.GetAxisRaw("Horizontal");
-        float v = Input.GetAxisRaw("Vertical");
-        m_Movement.Set(h, 0f, v);
-        m_Movement.Normalize();
-
-        bool moving = m_Movement.sqrMagnitude > 0.01f;
-        if (netIsWalking.Value != moving) netIsWalking.Value = moving;
-    }
-
     private void UpdateAnimationState()
     {
-        if (isDead.Value)
-        {
-            m_Animator.SetBool(IsWalkingHash, false);
-            return;
-        }
-        m_Animator.SetBool(IsWalkingHash, netIsWalking.Value);
+        bool walking = IsOwner ? (Input.GetAxisRaw("Horizontal") != 0 || Input.GetAxisRaw("Vertical") != 0) : netIsWalking.Value;
+        m_Animator.SetBool(IsWalkingHash, walking);
     }
 
     private bool IsImpostor()
     {
         return GameManager.Instance != null && GameManager.Instance.ImpostorId.Value == OwnerClientId;
     }
-    
+
     private void TryKillTarget()
     {
         Collider[] hits = Physics.OverlapSphere(transform.position, killRange);
@@ -198,7 +233,6 @@ public class PlayerMovement : NetworkBehaviour
             m_Rigidbody.linearVelocity = Vector3.zero;
         }
 
-
         if (IsServer && deadBodyPrefab != null)
         {
             GameObject body = Instantiate(deadBodyPrefab, transform.position, transform.rotation);
@@ -206,11 +240,10 @@ public class PlayerMovement : NetworkBehaviour
             body.GetComponent<NetworkObject>().Spawn();
             body.GetComponent<DeadBody>().SetupBody(PlayerNum.Value);
         }
-
     }
+
     public void RefreshVisibility()
     {
-        // Calculate visibility based on the LOCAL player's state
         if (NetworkManager.Singleton == null || NetworkManager.Singleton.LocalClient == null || NetworkManager.Singleton.LocalClient.PlayerObject == null) return;
 
         var localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
@@ -220,17 +253,15 @@ public class PlayerMovement : NetworkBehaviour
 
         if (!thisPlayerIsDead)
         {
-            // Alive players are always visible to everyone
             SetRenderersVisible(true, false);
         }
         else
         {
-            // This is a ghost. 
-            // Visible ONLY IF: I am the owner OR I am also dead (Ghost sees Ghost)
             bool shouldSee = amILocal || isLocalDead;
             SetRenderersVisible(shouldSee, true);
         }
     }
+
     private void SetRenderersVisible(bool visible, bool isGhostMaterial)
     {
         foreach (var r in playerRenderers)
@@ -241,45 +272,27 @@ public class PlayerMovement : NetworkBehaviour
 
             if (visible && isGhostMaterial && ghostMaterial != null)
             {
-                // Apply Ghost Material
                 Material[] ghostMats = new Material[r.sharedMaterials.Length];
                 for (int i = 0; i < ghostMats.Length; i++) ghostMats[i] = ghostMaterial;
                 r.materials = ghostMats;
             }
             else if (visible && !isGhostMaterial && originalMaterials.ContainsKey(r))
             {
-                // Restore Original Material
                 r.materials = originalMaterials[r];
             }
         }
     }
+
     public void TeleportTo(Vector3 pos)
     {
         if (IsServer)
         {
             transform.position = pos;
-            TeleportClientRpc(pos);
-        }
-    }
-
-    [Rpc(SendTo.ClientsAndHost)]
-    private void TeleportClientRpc(Vector3 pos)
-    {
-        transform.position = pos;
-        if (TryGetComponent<Rigidbody>(out var rb))
-        {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-        }
-    }
-    void OnAnimatorMove()
-    {
-        if (!IsOwner) return;
-
-        if (m_Rigidbody != null)
-        {
-            m_Rigidbody.MovePosition(m_Rigidbody.position + m_Movement * m_Animator.deltaPosition.magnitude);
-            m_Rigidbody.MoveRotation(m_Rotation);
+            if (TryGetComponent<Rigidbody>(out var rb))
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
         }
     }
 }
