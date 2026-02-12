@@ -882,7 +882,7 @@ GameObject:
   - component: {fileID: -647326577584131033}
   - component: {fileID: -7081624542470199427}
   - component: {fileID: 8049517460022517099}
-  - component: {fileID: -3380756116538075461}
+  - component: {fileID: 1507533936370060585}
   m_Layer: 3
   m_Name: Player
   m_TagString: Player
@@ -899,7 +899,7 @@ Transform:
   m_GameObject: {fileID: 6077229646317852079}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.054, y: 0, z: -2.306}
+  m_LocalPosition: {x: -11.054, y: 0.5, z: -2.306}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -922,10 +922,10 @@ Animator:
   m_Controller: {fileID: 9100000, guid: 125d3f71c2e7faf4cb375103b484d93e, type: 2}
   m_CullingMode: 1
   m_UpdateMode: 1
-  m_ApplyRootMotion: 1
+  m_ApplyRootMotion: 0
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
-  m_AnimatePhysics: 1
+  m_AnimatePhysics: 0
   m_WarningMessage: 
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
@@ -953,7 +953,7 @@ Rigidbody:
     m_Bits: 0
   m_ImplicitCom: 1
   m_ImplicitTensor: 1
-  m_UseGravity: 1
+  m_UseGravity: 0
   m_IsKinematic: 0
   m_Interpolate: 1
   m_Constraints: 84
@@ -1019,8 +1019,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
-  turnSpeed: 20
   moveSpeed: 0
+  turnSpeed: 20
   ghostSpeed: 5
   killRange: 1
   deadBodyPrefab: {fileID: 6077229646317852079, guid: 4c707cd667dbda144946c9603afbd75b,
@@ -1346,7 +1346,7 @@ MonoBehaviour:
   interactLayer:
     serializedVersion: 2
     m_Bits: 64
---- !u!114 &-3380756116538075461
+--- !u!114 &1507533936370060585
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}

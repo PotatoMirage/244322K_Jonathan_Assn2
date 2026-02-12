@@ -1,47 +1,41 @@
-using Unity.Netcode;
 using UnityEngine;
+using Unity.Netcode;
 
-public class TrapObject : Interactable
+public class TrapObject : NetworkBehaviour
 {
-    public float trapRadius = 4f;
-    public ParticleSystem trapVFX;
-    private bool isCooldown = false;
+    [Header("Trap Settings")]
+    public bool isOneTimeUse = false;
+    private bool hasTriggered = false;
 
-    public override void OnInteract(ulong interactorId)
+    private void OnTriggerEnter(Collider other)
     {
-        if (!IsServer || isCooldown) return;
+        // 1. Server Authority Only
+        if (!IsServer) return;
 
-        if (GameManager.Instance.ImpostorId.Value == interactorId)
+        if (hasTriggered && isOneTimeUse) return;
+
+        // 2. Logic: Did a player touch me?
+        if (other.TryGetComponent<PlayerMovement>(out var player))
         {
-            TriggerTrap();
-        }
-    }
-
-    private void TriggerTrap()
-    {
-        isCooldown = true;
-        TriggerTrapClientRpc();
-
-        Collider[] hits = Physics.OverlapSphere(transform.position, trapRadius);
-        foreach (var hit in hits)
-        {
-            if (hit.TryGetComponent<PlayerMovement>(out var player) && !player.isDead.Value)
+            // 3. Logic: Is that player capable of triggering traps? (Alive?)
+            if (!player.isDead.Value)
             {
-                if (player.OwnerClientId != GameManager.Instance.ImpostorId.Value)
+                if (GlobalEventManager.Instance != null)
                 {
-                    player.isDead.Value = true; // This auto-triggers death logic
-                    GameManager.Instance.OnPlayerDied(player.OwnerClientId);
+                    GlobalEventManager.Instance.TriggerLightsSabotage();
+                    hasTriggered = true;
+
+                    // Send visual/audio feedback to all clients
+                    TriggerVisualsClientRpc();
                 }
             }
         }
-        Invoke(nameof(ResetTrap), 10f);
     }
 
-    private void ResetTrap() => isCooldown = false;
-
     [Rpc(SendTo.ClientsAndHost)]
-    private void TriggerTrapClientRpc()
+    private void TriggerVisualsClientRpc()
     {
-        if (trapVFX != null) trapVFX.Play();
+        Debug.Log("Trap Visuals Playing!");
+        // Add AudioSource.Play() or ParticleSystem.Play() here
     }
 }

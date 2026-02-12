@@ -1,63 +1,64 @@
-using Unity.Netcode;
+using System.Collections;
 using UnityEngine;
+using Unity.Netcode;
 
 public class GlobalEventManager : NetworkBehaviour
 {
-    public static GlobalEventManager Instance;
-
-    [Header("Ambient Light Settings")]
-    public Color normalAmbient = new Color(1.0f, 1.0f, 1.0f);
-    public Color sabotageAmbient = Color.black;
+    public static GlobalEventManager Instance { get; private set; }
 
     public NetworkVariable<bool> IsLightsSabotaged = new NetworkVariable<bool>(false);
 
+    [Header("Ambient Settings")]
+    public Color normalAmbient = Color.white;
+    public Color sabotageAmbient = new Color(0.1f, 0.1f, 0.1f, 1f); // Very Dark/Red
+
     private void Awake()
     {
-        Instance = this;
+        if (Instance != null && Instance != this) Destroy(gameObject);
+        else Instance = this;
     }
 
-    public override void OnNetworkSpawn()
+    private void Start()
     {
-        // Store the initial lighting so we can revert to it
-        if (IsServer)
-        {
-            // Optional: Capture current scene settings on start
-            // normalAmbient = RenderSettings.ambientLight; 
-        }
+        // Listen for changes
+        IsLightsSabotaged.OnValueChanged += OnSabotageChanged;
 
-        IsLightsSabotaged.OnValueChanged += OnLightsChanged;
-
-        // Apply immediate state for late-joiners
-        ApplyLighting(IsLightsSabotaged.Value);
+        // Initialize
+        UpdateAmbientLight(IsLightsSabotaged.Value);
     }
 
     public override void OnNetworkDespawn()
     {
-        IsLightsSabotaged.OnValueChanged -= OnLightsChanged;
+        IsLightsSabotaged.OnValueChanged -= OnSabotageChanged;
     }
 
-    // Called by Impostor (UI Button or Keybind)
     public void TriggerLightsSabotage()
     {
-        if (IsServer) IsLightsSabotaged.Value = true;
+        if (IsServer)
+        {
+            IsLightsSabotaged.Value = true;
+            Debug.Log("Sabotage Triggered!");
+            StartCoroutine(RestoreLightsRoutine());
+        }
     }
 
-    // Called by Crewmates (Fixing the fuse box)
-    public void FixLights()
+    private IEnumerator RestoreLightsRoutine()
     {
-        if (IsServer) IsLightsSabotaged.Value = false;
+        yield return new WaitForSeconds(10f); // 10 seconds of darkness
+        IsLightsSabotaged.Value = false;
     }
 
-    private void OnLightsChanged(bool prev, bool isSabotaged)
+    private void OnSabotageChanged(bool prev, bool current)
     {
-        ApplyLighting(isSabotaged);
+        UpdateAmbientLight(current);
     }
 
-    private void ApplyLighting(bool isSabotaged)
+    private void UpdateAmbientLight(bool isSabotaged)
     {
+        // This changes the lighting for EVERYONE locally based on the NetworkVariable
         RenderSettings.ambientLight = isSabotaged ? sabotageAmbient : normalAmbient;
 
-        // Optional: If you use Fog, you might want to darken it too
-        // RenderSettings.fogColor = isSabotaged ? Color.black : normalFogColor;
+        // Optional: Force update if using Realtime GI
+        DynamicGI.UpdateEnvironment();
     }
 }
