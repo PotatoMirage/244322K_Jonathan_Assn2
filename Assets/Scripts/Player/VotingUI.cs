@@ -31,7 +31,17 @@ public class VotingUI : MonoBehaviour
             if (player != null && !player.isDead.Value)
             {
                 GameObject btn = Instantiate(voteButtonPrefab, buttonContainer);
-                btn.GetComponentInChildren<TextMeshProUGUI>().text = $"Player {client.ClientId}";
+
+                // --- NEW CODE START ---
+                // Use the synced PlayerName, fall back to ID if empty
+                string displayName = player.PlayerName.Value.ToString();
+                if (string.IsNullOrEmpty(displayName))
+                {
+                    displayName = $"Player {client.ClientId}";
+                }
+                btn.GetComponentInChildren<TextMeshProUGUI>().text = displayName;
+                // --- NEW CODE END ---
+
                 btn.GetComponent<Button>().onClick.AddListener(() => CastVote(client.ClientId));
                 playerButtons.Add(client.ClientId, btn);
             }

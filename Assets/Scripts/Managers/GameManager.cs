@@ -42,7 +42,6 @@ public class GameManager : NetworkBehaviour
             StateTimer.Value = 5.0f;
             GameResult.Value = 0;
 
-            // FIX: Clear task list on spawn to remove old scene references
             allTasks.Clear();
             playerTaskProgress.Clear();
         }
@@ -223,7 +222,7 @@ public class GameManager : NetworkBehaviour
         if (!IsServer) return;
 
         CurrentState.Value = GameState.Meeting;
-        StateTimer.Value = 5.0f;
+        StateTimer.Value = 0.1f;
 
         CleanupBodies();
         TeleportPlayersToSpawn();
@@ -240,8 +239,10 @@ public class GameManager : NetworkBehaviour
         SpawnPoint[] points = FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None).OrderBy(p => p.gameObject.name).ToArray();
         if (points.Length == 0) return;
 
+        var sortedClients = NetworkManager.Singleton.ConnectedClientsList.OrderBy(c => c.ClientId).ToList();
+
         int i = 0;
-        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        foreach (var client in sortedClients)
         {
             var player = client.PlayerObject.GetComponent<PlayerMovement>();
             if (player != null && !player.isDead.Value)
@@ -249,6 +250,19 @@ public class GameManager : NetworkBehaviour
                 player.TeleportTo(points[i % points.Length].transform.position);
                 i++;
             }
+        }
+    }
+
+    private void Shuffle<T>(T[] array)
+    {
+        int n = array.Length;
+        while (n > 1)
+        {
+            n--;
+            int k = Random.Range(0, n + 1);
+            T value = array[k];
+            array[k] = array[n];
+            array[n] = value;
         }
     }
 

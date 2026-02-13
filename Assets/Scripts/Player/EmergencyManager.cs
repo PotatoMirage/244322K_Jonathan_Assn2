@@ -56,13 +56,40 @@ public class EmergencyManager : NetworkBehaviour
         if (consoleB) consoleB.IsBeingHeld.Value = false;
     }
 
+    // --- UPDATED METHOD ---
     public void CheckConsoles()
     {
         if (!IsEmergencyActive.Value) return;
-        bool a = consoleA != null && consoleA.IsBeingHeld.Value;
-        bool b = consoleB != null && consoleB.IsBeingHeld.Value;
 
-        if (a && b) ResolveEmergency();
+        bool aHeld = consoleA != null && consoleA.IsBeingHeld.Value;
+        bool bHeld = consoleB != null && consoleB.IsBeingHeld.Value;
+
+        // Logic: Both must be held, AND the interactors must be different people
+        if (aHeld && bHeld)
+        {
+            if (consoleA.InteractorId != consoleB.InteractorId)
+            {
+                ResolveEmergency();
+            }
+        }
+    }
+
+    // --- NEW METHOD ---
+    public bool IsPlayerBusyWithOtherConsole(ulong playerId, EmergencyConsole requestingConsole)
+    {
+        // Check if player is holding Console A (and isn't the one requesting)
+        if (consoleA != null && consoleA != requestingConsole && consoleA.IsBeingHeld.Value && consoleA.InteractorId == playerId)
+        {
+            return true;
+        }
+
+        // Check if player is holding Console B (and isn't the one requesting)
+        if (consoleB != null && consoleB != requestingConsole && consoleB.IsBeingHeld.Value && consoleB.InteractorId == playerId)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private void ResolveEmergency()

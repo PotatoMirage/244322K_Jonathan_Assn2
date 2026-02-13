@@ -6811,7 +6811,7 @@ GameObject:
   - component: {fileID: 501990016}
   - component: {fileID: 501990015}
   m_Layer: 0
-  m_Name: SpawnPoint_2
+  m_Name: SpawnPoint2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -6838,7 +6838,7 @@ Transform:
   m_GameObject: {fileID: 501990014}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -9.07, y: 0.5, z: -5.86}
+  m_LocalPosition: {x: -9.07, y: 0.1, z: -5.86}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7015,8 +7015,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 204.28, y: 145.63}
-  m_SizeDelta: {x: 100, y: 0}
+  m_AnchoredPosition: {x: 230, y: 145.63}
+  m_SizeDelta: {x: 100, y: 20}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &587210965
 MonoBehaviour:
@@ -7047,10 +7047,10 @@ MonoBehaviour:
   m_Padding:
     m_Left: 0
     m_Right: 0
-    m_Top: 0
+    m_Top: 20
     m_Bottom: 0
-  m_ChildAlignment: 0
-  m_Spacing: 10
+  m_ChildAlignment: 1
+  m_Spacing: 30
   m_ChildForceExpandWidth: 1
   m_ChildForceExpandHeight: 1
   m_ChildControlWidth: 0
@@ -7069,7 +7069,7 @@ GameObject:
   - component: {fileID: 643873143}
   - component: {fileID: 643873142}
   m_Layer: 0
-  m_Name: SpawnPoint_3
+  m_Name: SpawnPoint3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7096,7 +7096,7 @@ Transform:
   m_GameObject: {fileID: 643873141}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.09, y: 0.5, z: -4.14}
+  m_LocalPosition: {x: -11.09, y: 0.1, z: -4.14}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7113,7 +7113,7 @@ GameObject:
   - component: {fileID: 687679088}
   - component: {fileID: 687679087}
   m_Layer: 0
-  m_Name: SpawnPoint_1
+  m_Name: SpawnPoint1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7140,7 +7140,7 @@ Transform:
   m_GameObject: {fileID: 687679086}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.09, y: 0.5, z: -5.86}
+  m_LocalPosition: {x: -11.09, y: 0.1, z: -5.86}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -8264,7 +8264,7 @@ GameObject:
   - component: {fileID: 929035699}
   - component: {fileID: 929035698}
   m_Layer: 0
-  m_Name: SpawnPoint_4
+  m_Name: SpawnPoint4
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8291,7 +8291,7 @@ Transform:
   m_GameObject: {fileID: 929035697}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -8.99, y: 0.5, z: -4.14}
+  m_LocalPosition: {x: -8.99, y: 0.1, z: -4.14}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -10138,6 +10138,7 @@ MonoBehaviour:
   manager: {fileID: 283120218}
   IsBeingHeld:
     m_InternalValue: 0
+  InteractorId: 18446744073709551615
   consoleRenderer: {fileID: 1499205058}
   activeMat: {fileID: 2100000, guid: 50d5989ad06d8bb4fb07d9987e27abf8, type: 2}
   inactiveMat: {fileID: 2100000, guid: e1f561b9de733f14a88d88bfb5aee533, type: 2}
@@ -11756,6 +11757,7 @@ MonoBehaviour:
   manager: {fileID: 283120218}
   IsBeingHeld:
     m_InternalValue: 0
+  InteractorId: 18446744073709551615
   consoleRenderer: {fileID: 2101018127}
   activeMat: {fileID: 2100000, guid: 50d5989ad06d8bb4fb07d9987e27abf8, type: 2}
   inactiveMat: {fileID: 2100000, guid: e1f561b9de733f14a88d88bfb5aee533, type: 2}

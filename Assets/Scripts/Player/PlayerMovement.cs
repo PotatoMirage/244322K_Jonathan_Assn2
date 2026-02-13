@@ -1,7 +1,9 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using Unity.Cinemachine;
+using Unity.Collections;
 using Unity.Netcode;
+using Unity.Services.Authentication;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -33,6 +35,7 @@ public class PlayerMovement : NetworkBehaviour
 
     private Dictionary<Renderer, Material[]> originalMaterials = new Dictionary<Renderer, Material[]>();
     private PlayerMovement _cachedLocalPlayer;
+    public NetworkVariable<FixedString32Bytes> PlayerName = new NetworkVariable<FixedString32Bytes>("");
 
     private PlayerMovement LocalPlayer
     {
@@ -48,7 +51,22 @@ public class PlayerMovement : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         if (IsServer) PlayerNum.Value = (int)OwnerClientId;
-        if (IsOwner) FindMyCamera();
+        if (IsOwner)
+        {
+            FindMyCamera();
+
+            string myName = $"Player {OwnerClientId}";
+            try
+            {
+                if (AuthenticationService.Instance.IsSignedIn && !string.IsNullOrEmpty(AuthenticationService.Instance.PlayerName))
+                {
+                    myName = AuthenticationService.Instance.PlayerName;
+                }
+            }
+            catch { }
+
+            SetPlayerNameServerRpc(myName);
+        }
 
         isDead.OnValueChanged += OnDeathStateChanged;
         SceneManager.sceneLoaded += OnSceneLoaded;
@@ -70,7 +88,11 @@ public class PlayerMovement : NetworkBehaviour
     {
         if (IsOwner) FindMyCamera();
     }
-
+    [Rpc(SendTo.Server)]
+    public void SetPlayerNameServerRpc(FixedString32Bytes name)
+    {
+        PlayerName.Value = name;
+    }
     private void StoreOriginalMaterials()
     {
         foreach (var r in playerRenderers)
@@ -332,7 +354,6 @@ public class PlayerMovement : NetworkBehaviour
         }
     }
 
-    // FIX: Coroutine to retry visibility update until LocalPlayer is ready
     private IEnumerator ClientRefreshVisibilityCoroutine()
     {
         int attempts = 0;
