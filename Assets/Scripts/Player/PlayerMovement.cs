@@ -1,5 +1,5 @@
-﻿using System.Collections.Generic;
-using TMPro;
+﻿using System.Collections;
+using System.Collections.Generic;
 using Unity.Cinemachine;
 using Unity.Netcode;
 using UnityEngine;
@@ -32,7 +32,19 @@ public class PlayerMovement : NetworkBehaviour
     private NetworkVariable<bool> netIsWalking = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
     private Dictionary<Renderer, Material[]> originalMaterials = new Dictionary<Renderer, Material[]>();
+    private PlayerMovement _cachedLocalPlayer;
 
+    private PlayerMovement LocalPlayer
+    {
+        get
+        {
+            if (_cachedLocalPlayer == null && NetworkManager.Singleton != null && NetworkManager.Singleton.LocalClient != null && NetworkManager.Singleton.LocalClient.PlayerObject != null)
+            {
+                _cachedLocalPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
+            }
+            return _cachedLocalPlayer;
+        }
+    }
     public override void OnNetworkSpawn()
     {
         if (IsServer) PlayerNum.Value = (int)OwnerClientId;
@@ -42,25 +54,34 @@ public class PlayerMovement : NetworkBehaviour
         SceneManager.sceneLoaded += OnSceneLoaded;
 
         StoreOriginalMaterials();
+
+        // Initialize state immediately
+        UpdateMaterialState(isDead.Value);
     }
 
     public override void OnNetworkDespawn()
     {
         isDead.OnValueChanged -= OnDeathStateChanged;
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        CancelInvoke(nameof(RefreshVisibility));
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         if (IsOwner) FindMyCamera();
     }
+
     private void StoreOriginalMaterials()
     {
         foreach (var r in playerRenderers)
         {
-            if (r != null) originalMaterials[r] = r.sharedMaterials;
+            if (r != null && !originalMaterials.ContainsKey(r))
+            {
+                originalMaterials[r] = r.sharedMaterials;
+            }
         }
     }
+
     private void FindMyCamera()
     {
         var virtualCamera = FindAnyObjectByType<CinemachineCamera>();
@@ -79,14 +100,12 @@ public class PlayerMovement : NetworkBehaviour
 
     private void Update()
     {
-        // FIX: Call this OUTSIDE the IsOwner check so all clients see the animation
         UpdateAnimationState();
 
         if (!IsOwner) return;
 
         if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay && !isDead.Value)
         {
-            // Reset walking state if gameplay is paused
             if (netIsWalking.Value) netIsWalking.Value = false;
             if (m_Animator) m_Animator.SetBool(IsWalkingHash, false);
             return;
@@ -104,16 +123,12 @@ public class PlayerMovement : NetworkBehaviour
 
         if (isDead.Value)
         {
-            // Ghost Movement (Remains Manual / Flying)
             Vector3 desiredMove = m_Movement * ghostSpeed * Time.fixedDeltaTime;
             m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
             m_Rigidbody.linearVelocity = Vector3.zero;
         }
         else
         {
-            // Living Movement (Root Motion Logic)
-
-            // 1. ROTATION: Handled manually for snappy control
             if (m_Movement.sqrMagnitude > 0)
             {
                 Vector3 desiredForward = Vector3.RotateTowards(transform.forward, m_Movement, turnSpeed * Time.fixedDeltaTime, 0f);
@@ -121,15 +136,36 @@ public class PlayerMovement : NetworkBehaviour
                 m_Rigidbody.MoveRotation(m_Rotation);
             }
 
-            // 2. STOP SLIDING: Explicitly zero out physics momentum.
-            // This prevents "ice sliding" after collisions or spawning.
-            // We preserve 'y' so gravity still works, but kill x/z velocity.
             Vector3 currentVel = m_Rigidbody.linearVelocity;
             m_Rigidbody.linearVelocity = new Vector3(0f, currentVel.y, 0f);
             m_Rigidbody.angularVelocity = Vector3.zero;
         }
     }
+    private void LateUpdate()
+    {
+        // Safety check: If game isn't running or local player isn't ready, do nothing
+        if (NetworkManager.Singleton == null || LocalPlayer == null) return;
 
+        bool amILocal = IsOwner;
+        bool isLocalViewerDead = LocalPlayer.isDead.Value;
+        bool thisPlayerIsDead = isDead.Value;
+
+        // LOGIC:
+        // 1. If this player is ALIVE, everyone sees them.
+        // 2. If this player is DEAD, they are visible ONLY if:
+        //    a. I am the owner (I see my own ghost)
+        //    b. I am also dead (Ghosts see ghosts)
+        bool shouldBeVisible = !thisPlayerIsDead || (amILocal || isLocalViewerDead);
+
+        // Enforce visibility on all renderers
+        foreach (var r in playerRenderers)
+        {
+            if (r != null && r.enabled != shouldBeVisible)
+            {
+                r.enabled = shouldBeVisible;
+            }
+        }
+    }
     private void HandleInput()
     {
         float h = Input.GetAxisRaw("Horizontal");
@@ -193,14 +229,55 @@ public class PlayerMovement : NetworkBehaviour
         }
     }
 
+    public void Revive()
+    {
+        if (IsServer) isDead.Value = false;
+        HandleRevive();
+        StartCoroutine(ClientRefreshVisibilityCoroutine());
+    }
+
     private void OnDeathStateChanged(bool prev, bool current)
     {
-        if (current) HandleDeath();
+        UpdateMaterialState(current);
 
-        foreach (var p in FindObjectsByType<PlayerMovement>(FindObjectsSortMode.None))
+        if (current) HandleDeath();
+        else HandleRevive();
+    }
+
+    private void UpdateMaterialState(bool isDeadState)
+    {
+        foreach (var r in playerRenderers)
         {
-            p.RefreshVisibility();
+            if (r == null) continue;
+
+            if (isDeadState)
+            {
+                // Switch to Ghost Material
+                if (ghostMaterial != null)
+                {
+                    // Check to avoid redundant array allocations
+                    if (r.sharedMaterial != ghostMaterial)
+                    {
+                        Material[] ghostMats = new Material[r.sharedMaterials.Length];
+                        for (int i = 0; i < ghostMats.Length; i++) ghostMats[i] = ghostMaterial;
+                        r.materials = ghostMats;
+                    }
+                }
+            }
+            else
+            {
+                // Revert to Original Materials
+                if (originalMaterials.ContainsKey(r))
+                {
+                    r.materials = originalMaterials[r];
+                }
+            }
         }
+    }
+
+    public void TriggerVisibilityCheck()
+    {
+        StartCoroutine(ClientRefreshVisibilityCoroutine());
     }
 
     private void HandleDeath()
@@ -224,6 +301,17 @@ public class PlayerMovement : NetworkBehaviour
         }
     }
 
+    private void HandleRevive()
+    {
+        if (playerCollider != null) playerCollider.enabled = true;
+        if (m_Rigidbody)
+        {
+            m_Rigidbody.useGravity = true;
+            m_Rigidbody.isKinematic = false;
+        }
+        // Material reset is handled by UpdateMaterialState
+    }
+
     public void TeleportTo(Vector3 pos)
     {
         if (IsServer)
@@ -243,11 +331,26 @@ public class PlayerMovement : NetworkBehaviour
             rb.angularVelocity = Vector3.zero;
         }
     }
+
+    // FIX: Coroutine to retry visibility update until LocalPlayer is ready
+    private IEnumerator ClientRefreshVisibilityCoroutine()
+    {
+        int attempts = 0;
+        while (attempts < 10)
+        {
+            RefreshVisibility();
+            yield return new WaitForSeconds(0.1f);
+            attempts++;
+        }
+    }
+
     public void RefreshVisibility()
     {
         if (NetworkManager.Singleton == null || NetworkManager.Singleton.LocalClient == null || NetworkManager.Singleton.LocalClient.PlayerObject == null) return;
 
         var localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
+        if (localPlayer == null) return;
+
         bool amILocal = IsOwner;
         bool isLocalDead = localPlayer.isDead.Value;
         bool thisPlayerIsDead = isDead.Value;
@@ -262,6 +365,7 @@ public class PlayerMovement : NetworkBehaviour
             SetRenderersVisible(shouldSee, true);
         }
     }
+
     private void SetRenderersVisible(bool visible, bool isGhostMaterial)
     {
         foreach (var r in playerRenderers)
@@ -270,6 +374,7 @@ public class PlayerMovement : NetworkBehaviour
 
             r.enabled = visible;
 
+            // FIX: Ensure we use the cached original materials correctly
             if (visible && isGhostMaterial && ghostMaterial != null)
             {
                 Material[] ghostMats = new Material[r.sharedMaterials.Length];
@@ -282,24 +387,15 @@ public class PlayerMovement : NetworkBehaviour
             }
         }
     }
+
     private void OnAnimatorMove()
     {
-        // Only the Owner applies Root Motion to the Rigidbody
-        if (!IsOwner) return;
-
-        // Ghosts do not use Root Motion (they fly manually)
-        if (isDead.Value) return;
-
+        if (!IsOwner || isDead.Value) return;
         if (GameManager.Instance != null && GameManager.Instance.CurrentState.Value != GameManager.GameState.Gameplay) return;
 
         if (m_Animator != null && m_Rigidbody != null)
         {
-            // Apply Root Motion from the Animation to the Rigidbody.
-            // This ensures the movement matches the feet exactly.
             m_Rigidbody.MovePosition(m_Rigidbody.position + m_Animator.deltaPosition);
-
-            // We do NOT apply Root Rotation here because we handle it manually 
-            // in FixedUpdate for better gameplay responsiveness.
         }
     }
 }

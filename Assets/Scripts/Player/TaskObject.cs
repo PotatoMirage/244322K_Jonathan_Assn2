@@ -16,10 +16,14 @@ public class TaskObject : Interactable
         {
             GameManager.Instance.RegisterTask(this);
         }
-        // Default visual state
-        if (taskRenderer != null) taskRenderer.material = incompleteMat;
-    }
 
+        // FIX: Explicitly force the visual state to incomplete on spawn
+        // This ensures that even if the game restarts, the visual resets locally.
+        if (taskRenderer != null && incompleteMat != null)
+        {
+            taskRenderer.material = incompleteMat;
+        }
+    }
     public void ResetTask()
     {
         completedPlayers.Clear();

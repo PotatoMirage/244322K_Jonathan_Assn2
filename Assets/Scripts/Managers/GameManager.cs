@@ -41,6 +41,10 @@ public class GameManager : NetworkBehaviour
             CurrentState.Value = GameState.Lobby;
             StateTimer.Value = 5.0f;
             GameResult.Value = 0;
+
+            // FIX: Clear task list on spawn to remove old scene references
+            allTasks.Clear();
+            playerTaskProgress.Clear();
         }
     }
 
@@ -67,6 +71,9 @@ public class GameManager : NetworkBehaviour
 
     private void StartGame()
     {
+        CleanupBodies();
+        ResetAllPlayers();
+
         CurrentState.Value = GameState.Gameplay;
         var clients = NetworkManager.Singleton.ConnectedClientsIds;
         CrewmatesAlive.Value = clients.Count - 1;
@@ -81,6 +88,10 @@ public class GameManager : NetworkBehaviour
     private void SetupTasks(List<ulong> playerIds)
     {
         playerTaskProgress.Clear();
+
+        // FIX: Remove destroyed/null tasks from previous scenes before setting up
+        allTasks.RemoveAll(t => t == null);
+
         foreach (var id in playerIds)
         {
             if (id != ImpostorId.Value)
@@ -91,19 +102,27 @@ public class GameManager : NetworkBehaviour
 
         foreach (var task in allTasks)
         {
-            task.ResetTask();
+            if (task != null) task.ResetTask();
         }
 
+        // FIX: Ensure calculation uses the actual valid task count
         int actualTasksPerPlayer = Mathf.Min(tasksPerPlayer, allTasks.Count);
         TotalTasks.Value = actualTasksPerPlayer * CrewmatesAlive.Value;
         CompletedTasks.Value = 0;
+
+        Debug.Log($"Game Started. Tasks Registered: {allTasks.Count}. Total Required: {TotalTasks.Value}");
     }
 
     public void RegisterTask(TaskObject task)
     {
-        if (IsServer && !allTasks.Contains(task))
+        if (IsServer)
         {
-            allTasks.Add(task);
+            // FIX: Remove nulls and ensure uniqueness
+            allTasks.RemoveAll(t => t == null);
+            if (!allTasks.Contains(task))
+            {
+                allTasks.Add(task);
+            }
         }
     }
 
@@ -127,12 +146,19 @@ public class GameManager : NetworkBehaviour
 
     public void OnPlayerDied(ulong clientId)
     {
-        if (!IsServer || CurrentState.Value != GameState.Gameplay) return;
+        if (!IsServer) return;
+        if (CurrentState.Value != GameState.Gameplay && CurrentState.Value != GameState.Voting) return;
 
-        if (clientId != ImpostorId.Value)
+        if (clientId == ImpostorId.Value)
+        {
+            EndGame(1);
+            return;
+        }
+        else
         {
             CrewmatesAlive.Value--;
         }
+
         CheckWinCondition();
     }
 
@@ -169,7 +195,27 @@ public class GameManager : NetworkBehaviour
     public void RestartToLobby()
     {
         if (!IsServer) return;
+
+        CleanupBodies();
+        ResetAllPlayers();
+
+        // FIX: Clear tasks when returning to lobby
+        allTasks.Clear();
+        playerTaskProgress.Clear();
+
         NetworkManager.Singleton.SceneManager.LoadScene("Lobby", UnityEngine.SceneManagement.LoadSceneMode.Single);
+    }
+
+    private void ResetAllPlayers()
+    {
+        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        {
+            var player = client.PlayerObject.GetComponent<PlayerMovement>();
+            if (player != null)
+            {
+                player.Revive();
+            }
+        }
     }
 
     public void TriggerMeeting(ulong reporterId)
@@ -179,11 +225,7 @@ public class GameManager : NetworkBehaviour
         CurrentState.Value = GameState.Meeting;
         StateTimer.Value = 5.0f;
 
-        foreach (var body in FindObjectsByType<DeadBody>(FindObjectsSortMode.None))
-        {
-            body.GetComponent<NetworkObject>().Despawn();
-        }
-
+        CleanupBodies();
         TeleportPlayersToSpawn();
     }
 
@@ -207,6 +249,15 @@ public class GameManager : NetworkBehaviour
                 player.TeleportTo(points[i % points.Length].transform.position);
                 i++;
             }
+        }
+    }
+
+    private void CleanupBodies()
+    {
+        foreach (var body in FindObjectsByType<DeadBody>(FindObjectsSortMode.None))
+        {
+            if (body != null && body.GetComponent<NetworkObject>() != null)
+                body.GetComponent<NetworkObject>().Despawn();
         }
     }
 }

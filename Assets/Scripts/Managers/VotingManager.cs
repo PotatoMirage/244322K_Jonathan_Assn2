@@ -42,6 +42,30 @@ public class VotingManager : NetworkBehaviour
     public void CastVoteServerRpc(ulong voterId, ulong targetId, bool isSkip)
     {
         if (!IsVotingOpen.Value) return;
+
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(voterId, out NetworkClient voterClient))
+        {
+            var voter = voterClient.PlayerObject.GetComponent<PlayerMovement>();
+            if (voter == null || voter.isDead.Value) return;
+        }
+        else
+        {
+            return;
+        }
+
+        if (!isSkip)
+        {
+            if (NetworkManager.Singleton.ConnectedClients.TryGetValue(targetId, out NetworkClient targetClient))
+            {
+                var target = targetClient.PlayerObject.GetComponent<PlayerMovement>();
+                if (target == null || target.isDead.Value) return;
+            }
+            else
+            {
+                return;
+            }
+        }
+
         if (votes.ContainsKey(voterId) || skipVotes.Contains(voterId)) return;
 
         if (isSkip) skipVotes.Add(voterId);
@@ -49,8 +73,17 @@ public class VotingManager : NetworkBehaviour
 
         UpdateVoteStatusClientRpc(voterId);
 
-        int totalAlive = GameManager.Instance.CrewmatesAlive.Value + 1;
-        if ((votes.Count + skipVotes.Count) >= totalAlive)
+        int livingPlayers = 0;
+        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        {
+            var player = client.PlayerObject.GetComponent<PlayerMovement>();
+            if (player != null && !player.isDead.Value)
+            {
+                livingPlayers++;
+            }
+        }
+
+        if ((votes.Count + skipVotes.Count) >= livingPlayers)
         {
             VoteTimer.Value = 3f;
         }
@@ -108,7 +141,10 @@ public class VotingManager : NetworkBehaviour
 
     private void ReturnToGame()
     {
-        //GameManager.Instance.CurrentState.Value = GameManager.GameState.Gameplay;
+        // FIX: If the game ended because the Impostor was ejected, do not switch back to Gameplay.
+        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Ended) return;
+
+        GameManager.Instance.CurrentState.Value = GameManager.GameState.Gameplay;
     }
 
     [Rpc(SendTo.ClientsAndHost)]

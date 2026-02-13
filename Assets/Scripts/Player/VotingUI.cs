@@ -40,8 +40,13 @@ public class VotingUI : MonoBehaviour
         GameObject skipBtn = Instantiate(voteButtonPrefab, buttonContainer);
         skipBtn.GetComponentInChildren<TextMeshProUGUI>().text = "SKIP VOTE";
         skipBtn.GetComponent<Button>().onClick.AddListener(() => CastSkip());
-    }
 
+        var localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
+        if (localPlayer != null && localPlayer.isDead.Value)
+        {
+            DisableButtons();
+        }
+    }
     private void Update()
     {
         if (panel.activeSelf && VotingManager.Instance != null)
