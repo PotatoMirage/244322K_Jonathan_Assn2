@@ -17,7 +17,7 @@ public class GameManager : NetworkBehaviour
     [Header("Game Settings")]
     public float votingTime = 30f;
     public Transform[] spawnPoints;
-    public int tasksPerPlayer = 3;
+    public int tasksPerPlayer = 1;
 
     // Trackers
     public NetworkVariable<int> TotalTasks = new NetworkVariable<int>(0);
@@ -159,23 +159,27 @@ public class GameManager : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        // 1. Revive Everyone
+        // 1. Reset Game State
+        CurrentState.Value = GameState.Lobby;
+        ImpostorId.Value = ulong.MaxValue;
+        CompletedTasks.Value = 0;
+        GameResult.Value = 0;
+
+        // 2. Revive all players so they appear alive in the Lobby
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null) player.Revive();
+            if (client.PlayerObject != null)
+            {
+                var player = client.PlayerObject.GetComponent<PlayerMovement>();
+                if (player != null)
+                {
+                    player.isDead.Value = false;
+                }
+            }
         }
 
-        // 2. Reset Game Variables
-        CrewmatesAlive.Value = NetworkManager.Singleton.ConnectedClientsIds.Count - 1;
-        CompletedTasks.Value = 0;
-        ImpostorId.Value = ulong.MaxValue;
-
-        // 3. Teleport Everyone to Spawn
-        TeleportAllToSpawn();
-
-        // 4. Restart the Loop (Re-assign roles, etc.)
-        StartGame();
+        // 3. Load the Lobby Scene (Must match the Scene Name in Build Settings)
+        NetworkManager.Singleton.SceneManager.LoadScene("Lobby", UnityEngine.SceneManagement.LoadSceneMode.Single);
     }
 
     public void ReportBody(ulong reporterId)

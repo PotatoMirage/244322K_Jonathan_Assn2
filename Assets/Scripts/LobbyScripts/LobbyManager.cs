@@ -30,6 +30,7 @@ public class LobbyManager : MonoBehaviour
             Destroy(gameObject);
             return;
         }
+        Application.runInBackground = true;
         Instance = this;
         DontDestroyOnLoad(gameObject);
     }
@@ -45,9 +46,23 @@ public class LobbyManager : MonoBehaviour
 
         try
         {
-            await UnityServices.InitializeAsync();
+            // --- FIX START: Profile Management ---
+            // This allows multiple builds on the same PC to have different Identities
+            var options = new InitializationOptions();
+
+#if UNITY_EDITOR
+            // Editor always uses the "EditorProfile"
+            options.SetProfile("EditorProfile");
+#else
+            options.SetProfile("BuildProfile_" + UnityEngine.Random.Range(0, 10000));
+#endif
+
+            await UnityServices.InitializeAsync(options);
+            // --- FIX END ---
+
             if (!AuthenticationService.Instance.IsSignedIn)
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
+
             UpdateStatus($"Signed in as {AuthenticationService.Instance.PlayerId}");
         }
         catch (Exception e)
