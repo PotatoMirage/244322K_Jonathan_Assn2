@@ -12,39 +12,81 @@ public class GameManager : NetworkBehaviour
 
     public NetworkVariable<float> StateTimer = new NetworkVariable<float>(0f);
     public NetworkVariable<ulong> ImpostorId = new NetworkVariable<ulong>(ulong.MaxValue);
+    public NetworkVariable<int> GameResult = new NetworkVariable<int>(0); // 1: Crew, 2: Impostor
 
-    [Header("Task Settings")]
+    [Header("Game Settings")]
+    public float votingTime = 30f;
+    public Transform[] spawnPoints;
     public int tasksPerPlayer = 3;
 
+    // Trackers
     public NetworkVariable<int> TotalTasks = new NetworkVariable<int>(0);
     public NetworkVariable<int> CompletedTasks = new NetworkVariable<int>(0);
     public NetworkVariable<int> CrewmatesAlive = new NetworkVariable<int>(0);
-    public NetworkVariable<int> GameResult = new NetworkVariable<int>(0);
 
-    private List<TaskObject> allTasks = new List<TaskObject>();
-    private Dictionary<ulong, int> playerTaskProgress = new Dictionary<ulong, int>();
+    private Dictionary<ulong, int> playerTaskCounts = new Dictionary<ulong, int>();
 
-    private void Awake()
-    {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        Instance = this;
-    }
+    private void Awake() { Instance = this; }
+
+    // Inside GameManager.cs
 
     public override void OnNetworkSpawn()
     {
         if (IsServer)
         {
-            CurrentState.Value = GameState.Lobby;
-            StateTimer.Value = 5.0f;
-            GameResult.Value = 0;
+            // 1. Listen for Scene Changes
+            NetworkManager.Singleton.SceneManager.OnLoadEventCompleted += OnSceneLoaded;
 
-            allTasks.Clear();
-            playerTaskProgress.Clear();
+            // 2. Handle initial state
+            string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (currentScene == "Lobby" || currentScene == "Menu")
+            {
+                CurrentState.Value = GameState.Lobby;
+            }
         }
+
+        // Subscribe to state changes for everyone
+        CurrentState.OnValueChanged += OnStateChanged;
+    }
+
+    // Good practice: Clean up event subscription
+    public override void OnNetworkDespawn()
+    {
+        CurrentState.OnValueChanged -= OnStateChanged;
+    }
+    private void OnSceneLoaded(string sceneName, UnityEngine.SceneManagement.LoadSceneMode loadSceneMode, System.Collections.Generic.List<ulong> clientsCompleted, System.Collections.Generic.List<ulong> clientsTimedOut)
+    {
+        if (!IsServer) return;
+
+        if (sceneName == "MainScene" || sceneName == "mainscene")
+        {
+            // FIX: Don't run immediately. Wait for the engine to settle.
+            StartCoroutine(StartGameRoutine());
+        }
+    }
+    private System.Collections.IEnumerator StartGameRoutine()
+    {
+        yield return new WaitForSeconds(5f);
+
+
+        // Setup Roles
+        var clients = NetworkManager.Singleton.ConnectedClientsIds.ToList();
+        ImpostorId.Value = clients[Random.Range(0, clients.Count)];
+        CrewmatesAlive.Value = clients.Count - 1;
+
+        TotalTasks.Value = CrewmatesAlive.Value * tasksPerPlayer;
+        CompletedTasks.Value = 0;
+
+        // Teleport
+        TeleportAllToSpawn();
+
+        // Open Gameplay
+        CurrentState.Value = GameState.Gameplay;
+    }
+    private void OnStateChanged(GameState oldState, GameState newState)
+    {
+        Debug.Log($"Game State Changed: {newState}");
+        // You can trigger UI updates here automatically!
     }
 
     private void Update()
@@ -54,224 +96,187 @@ public class GameManager : NetworkBehaviour
         switch (CurrentState.Value)
         {
             case GameState.Lobby:
-                if (GameResult.Value == 0)
-                {
-                    StateTimer.Value -= Time.deltaTime;
-                    if (StateTimer.Value <= 0f) StartGame();
-                }
+                // Logic handled manually or via LobbyManager
+                break;
+
+            case GameState.Gameplay:
+                // Win conditions handled by events
                 break;
 
             case GameState.Meeting:
                 StateTimer.Value -= Time.deltaTime;
-                if (StateTimer.Value <= 0f) StartVoting();
+                if (StateTimer.Value <= 0)
+                {
+                    StartVoting();
+                }
+                break;
+
+            case GameState.Voting:
+                StateTimer.Value -= Time.deltaTime;
+                if (StateTimer.Value <= 0)
+                {
+                    VotingManager.Instance.ConcludeVoting();
+                }
                 break;
         }
     }
 
-    private void StartGame()
+    public void StartGame()
     {
-        CleanupBodies();
-        ResetAllPlayers();
+        if (!IsServer) return;
 
-        CurrentState.Value = GameState.Gameplay;
-        var clients = NetworkManager.Singleton.ConnectedClientsIds;
+        // 1. Setup Roles
+        var clients = NetworkManager.Singleton.ConnectedClientsIds.ToList();
+        ImpostorId.Value = clients[Random.Range(0, clients.Count)];
         CrewmatesAlive.Value = clients.Count - 1;
 
-        List<ulong> clientIds = new List<ulong>(clients);
-        ImpostorId.Value = clientIds[Random.Range(0, clientIds.Count)];
-
-        SetupTasks(clientIds);
-        TeleportPlayersToSpawn();
-    }
-
-    private void SetupTasks(List<ulong> playerIds)
-    {
-        playerTaskProgress.Clear();
-
-        // FIX: Remove destroyed/null tasks from previous scenes before setting up
-        allTasks.RemoveAll(t => t == null);
-
-        foreach (var id in playerIds)
-        {
-            if (id != ImpostorId.Value)
-            {
-                playerTaskProgress[id] = 0;
-            }
-        }
-
-        foreach (var task in allTasks)
-        {
-            if (task != null) task.ResetTask();
-        }
-
-        // FIX: Ensure calculation uses the actual valid task count
-        int actualTasksPerPlayer = Mathf.Min(tasksPerPlayer, allTasks.Count);
-        TotalTasks.Value = actualTasksPerPlayer * CrewmatesAlive.Value;
+        // 2. Setup Tasks
+        TotalTasks.Value = CrewmatesAlive.Value * tasksPerPlayer;
         CompletedTasks.Value = 0;
 
-        Debug.Log($"Game Started. Tasks Registered: {allTasks.Count}. Total Required: {TotalTasks.Value}");
+        // 3. Teleport Players (Now they are guaranteed to be in the scene)
+        TeleportAllToSpawn();
+
+        // 4. Set State
+        CurrentState.Value = GameState.Gameplay;
     }
 
-    public void RegisterTask(TaskObject task)
-    {
-        if (IsServer)
-        {
-            // FIX: Remove nulls and ensure uniqueness
-            allTasks.RemoveAll(t => t == null);
-            if (!allTasks.Contains(task))
-            {
-                allTasks.Add(task);
-            }
-        }
-    }
-
-    public void CompleteTask(ulong playerId)
-    {
-        if (!IsServer || CurrentState.Value != GameState.Gameplay) return;
-
-        if (playerTaskProgress.ContainsKey(playerId))
-        {
-            int current = playerTaskProgress[playerId];
-            int max = Mathf.Min(tasksPerPlayer, allTasks.Count);
-
-            if (current < max)
-            {
-                playerTaskProgress[playerId]++;
-                CompletedTasks.Value++;
-                CheckWinCondition();
-            }
-        }
-    }
-
-    public void OnPlayerDied(ulong clientId)
-    {
-        if (!IsServer) return;
-        if (CurrentState.Value != GameState.Gameplay && CurrentState.Value != GameState.Voting) return;
-
-        if (clientId == ImpostorId.Value)
-        {
-            EndGame(1);
-            return;
-        }
-        else
-        {
-            CrewmatesAlive.Value--;
-        }
-
-        CheckWinCondition();
-    }
-
-    private void CheckWinCondition()
-    {
-        if (CrewmatesAlive.Value <= 0)
-        {
-            EndGame(2);
-            return;
-        }
-
-        bool allFinished = true;
-        int max = Mathf.Min(tasksPerPlayer, allTasks.Count);
-
-        foreach (var kvp in playerTaskProgress)
-        {
-            if (kvp.Value < max)
-            {
-                allFinished = false;
-                break;
-            }
-        }
-
-        if (allFinished && TotalTasks.Value > 0) EndGame(1);
-    }
-
-    public void EndGame(int result)
-    {
-        if (!IsServer) return;
-        CurrentState.Value = GameState.Ended;
-        GameResult.Value = result;
-    }
-
-    public void RestartToLobby()
+    public void RestartGameMatch()
     {
         if (!IsServer) return;
 
-        CleanupBodies();
-        ResetAllPlayers();
-
-        // FIX: Clear tasks when returning to lobby
-        allTasks.Clear();
-        playerTaskProgress.Clear();
-
-        NetworkManager.Singleton.SceneManager.LoadScene("Lobby", UnityEngine.SceneManagement.LoadSceneMode.Single);
-    }
-
-    private void ResetAllPlayers()
-    {
+        // 1. Revive Everyone
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
             var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null)
-            {
-                player.Revive();
-            }
+            if (player != null) player.Revive();
         }
+
+        // 2. Reset Game Variables
+        CrewmatesAlive.Value = NetworkManager.Singleton.ConnectedClientsIds.Count - 1;
+        CompletedTasks.Value = 0;
+        ImpostorId.Value = ulong.MaxValue;
+
+        // 3. Teleport Everyone to Spawn
+        TeleportAllToSpawn();
+
+        // 4. Restart the Loop (Re-assign roles, etc.)
+        StartGame();
     }
 
-    public void TriggerMeeting(ulong reporterId)
+    public void ReportBody(ulong reporterId)
     {
-        if (!IsServer) return;
+        if (!IsServer || CurrentState.Value != GameState.Gameplay) return;
 
         CurrentState.Value = GameState.Meeting;
-        StateTimer.Value = 0.1f;
+        StateTimer.Value = 0.0f;
 
+        TeleportAllToSpawn();
         CleanupBodies();
-        TeleportPlayersToSpawn();
+        TriggerMeetingAlertClientRpc(reporterId);
     }
 
     private void StartVoting()
     {
         CurrentState.Value = GameState.Voting;
+        StateTimer.Value = votingTime;
         VotingManager.Instance.StartVotingSession();
     }
 
-    private void TeleportPlayersToSpawn()
+    public void CompleteTask(ulong playerId)
     {
-        SpawnPoint[] points = FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None).OrderBy(p => p.gameObject.name).ToArray();
-        if (points.Length == 0) return;
+        if (!IsServer) return;
+        if (playerId == ImpostorId.Value) return;
 
-        var sortedClients = NetworkManager.Singleton.ConnectedClientsList.OrderBy(c => c.ClientId).ToList();
+        if (!playerTaskCounts.ContainsKey(playerId)) playerTaskCounts[playerId] = 0;
 
-        int i = 0;
-        foreach (var client in sortedClients)
+        // Simple global count check
+        CompletedTasks.Value++;
+        CheckWinCondition();
+    }
+
+    public void OnPlayerDied(ulong clientId)
+    {
+        if (!IsServer) return;
+
+        if (clientId == ImpostorId.Value)
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null && !player.isDead.Value)
-            {
-                player.TeleportTo(points[i % points.Length].transform.position);
-                i++;
-            }
+            EndGame(1); // Crew Win
+            return;
+        }
+
+        CrewmatesAlive.Value--;
+        CheckWinCondition();
+    }
+
+    private void CheckWinCondition()
+    {
+        if (CompletedTasks.Value >= TotalTasks.Value && TotalTasks.Value > 0)
+        {
+            EndGame(1);
+            return;
+        }
+        if (CrewmatesAlive.Value <= 0)
+        {
+            EndGame(2); // Impostor Win
         }
     }
 
-    private void Shuffle<T>(T[] array)
+    public void EndGame(int winner)
     {
-        int n = array.Length;
-        while (n > 1)
+        if (!IsServer) return;
+        GameResult.Value = winner;
+        CurrentState.Value = GameState.Ended;
+    }
+
+    private void TeleportAllToSpawn()
+    {
+        if (spawnPoints == null || spawnPoints.Length == 0)
         {
-            n--;
-            int k = Random.Range(0, n + 1);
-            T value = array[k];
-            array[k] = array[n];
-            array[n] = value;
+            Debug.LogError("No Spawn Points assigned in GameManager!");
+            return;
+        }
+
+        int i = 0;
+        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        {
+            var player = client.PlayerObject.GetComponent<PlayerMovement>();
+
+            if (player != null)
+            {
+                // Pick spawn point
+                Transform spawn = spawnPoints[i % spawnPoints.Length];
+
+                Debug.Log($"Teleporting Player {client.ClientId} to {spawn.position}");
+
+                // Send command
+                player.TeleportClientRpc(spawn.position);
+
+                i++;
+            }
+            else
+            {
+                Debug.LogError($"Player Object for Client {client.ClientId} is NULL! They will not spawn.");
+            }
         }
     }
 
     private void CleanupBodies()
     {
-        foreach (var body in FindObjectsByType<DeadBody>(FindObjectsSortMode.None))
+        var bodies = FindObjectsByType<DeadBody>(FindObjectsSortMode.None);
+        foreach (var body in bodies)
         {
-            if (body != null && body.GetComponent<NetworkObject>() != null)
-                body.GetComponent<NetworkObject>().Despawn();
+            var netObj = body.GetComponent<NetworkObject>();
+            if (netObj != null && netObj.IsSpawned)
+            {
+                netObj.Despawn();
+            }
         }
+    }
+
+    [Rpc(SendTo.ClientsAndHost)]
+    private void TriggerMeetingAlertClientRpc(ulong reporterId)
+    {
+        // Visual cue logic
     }
 }

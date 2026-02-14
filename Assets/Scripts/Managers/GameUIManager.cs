@@ -37,7 +37,7 @@ public class GameUIManager : NetworkBehaviour
         {
             restartButton.onClick.AddListener(() =>
             {
-                if (IsServer) GameManager.Instance.RestartToLobby();
+                if (IsServer) GameManager.Instance.RestartGameMatch();
             });
         }
     }

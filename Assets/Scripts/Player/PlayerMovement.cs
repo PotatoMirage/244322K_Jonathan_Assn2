@@ -132,7 +132,6 @@ public class PlayerMovement : NetworkBehaviour
             if (m_Animator) m_Animator.SetBool(IsWalkingHash, false);
             return;
         }
-
         HandleInput();
 
         if (Input.GetKeyDown(KeyCode.Space) && IsImpostor() && !isDead.Value) TryKillTarget();
@@ -343,15 +342,16 @@ public class PlayerMovement : NetworkBehaviour
         }
     }
 
-    [Rpc(SendTo.ClientsAndHost)]
-    private void TeleportClientRpc(Vector3 pos)
+    [Rpc(SendTo.Owner)]
+    public void TeleportClientRpc(Vector3 newPos)
     {
-        transform.position = pos;
-        if (TryGetComponent<Rigidbody>(out var rb))
-        {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-        }
+        // Physics check: Disable CharacterController temporarily to allow teleport
+        CharacterController cc = GetComponent<CharacterController>();
+        if (cc != null) cc.enabled = false;
+
+        transform.position = newPos;
+
+        if (cc != null) cc.enabled = true;
     }
 
     private IEnumerator ClientRefreshVisibilityCoroutine()
@@ -395,7 +395,6 @@ public class PlayerMovement : NetworkBehaviour
 
             r.enabled = visible;
 
-            // FIX: Ensure we use the cached original materials correctly
             if (visible && isGhostMaterial && ghostMaterial != null)
             {
                 Material[] ghostMats = new Material[r.sharedMaterials.Length];

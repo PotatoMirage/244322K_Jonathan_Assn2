@@ -249,4 +249,28 @@ public class LobbyManager : MonoBehaviour
     {
         if (statusLabel != null) statusLabel.text = text;
     }
+    public void SetLocalPlayerName()
+    {
+        // 1. Get the text from your existing text field
+        string nameToSet = nameInput.text;
+
+        if (string.IsNullOrEmpty(nameToSet)) return;
+
+        // 2. Find the local player's object
+        if (NetworkManager.Singleton.LocalClient != null &&
+            NetworkManager.Singleton.LocalClient.PlayerObject != null)
+        {
+            var playerObject = NetworkManager.Singleton.LocalClient.PlayerObject;
+
+            // 3. Get the Data script we made earlier
+            var playerData = playerObject.GetComponent<PlayerPlayerData>();
+
+            if (playerData != null)
+            {
+                // 4. Send the RPC
+                playerData.SetPlayerNameServerRpc(nameToSet);
+                Debug.Log($"Sent name update request: {nameToSet}");
+            }
+        }
+    }
 }

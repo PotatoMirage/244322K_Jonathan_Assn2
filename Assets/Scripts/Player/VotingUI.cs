@@ -8,95 +8,137 @@ public class VotingUI : MonoBehaviour
 {
     public static VotingUI Instance;
 
-    public GameObject panel;
-    public Transform buttonContainer;
-    public GameObject voteButtonPrefab;
+    [Header("UI References")]
+    public GameObject votingPanel;      // The whole screen
+    public Transform buttonContainer;   // Where we spawn player buttons
+    public GameObject playerButtonPrefab; // Prefab with Text + Button
     public TextMeshProUGUI timerText;
-    public TextMeshProUGUI resultText;
+    public TextMeshProUGUI resultText;  // "Red was Ejected"
 
-    private Dictionary<ulong, GameObject> playerButtons = new Dictionary<ulong, GameObject>();
+    private Dictionary<ulong, Button> playerButtons = new Dictionary<ulong, Button>();
 
-    private void Awake() => Instance = this;
+    private void Awake() { Instance = this; }
 
+    private void Start()
+    {
+        votingPanel.SetActive(false);
+        resultText.gameObject.SetActive(false);
+    }
+
+    private void Update()
+    {
+        // Update the timer visual from the Manager
+        if (votingPanel.activeSelf && VotingManager.Instance.IsVotingOpen.Value)
+        {
+            timerText.text = $"Voting Ends: {Mathf.Ceil(VotingManager.Instance.VoteTimer.Value)}";
+        }
+    }
+
+    // Called by VotingManager via RPC
     public void Show()
     {
-        panel.SetActive(true);
-        resultText.text = "";
+        votingPanel.SetActive(true);
+        resultText.gameObject.SetActive(false);
+        GenerateButtons();
+    }
+
+    private void GenerateButtons()
+    {
+        // Clear old buttons
         foreach (Transform child in buttonContainer) Destroy(child.gameObject);
         playerButtons.Clear();
 
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null && !player.isDead.Value)
+            ulong clientId = client.ClientId;
+            GameObject btnObj = Instantiate(playerButtonPrefab, buttonContainer);
+            Button btn = btnObj.GetComponent<Button>();
+            TextMeshProUGUI txt = btnObj.GetComponentInChildren<TextMeshProUGUI>();
+            Image btnImage = btnObj.GetComponent<Image>(); // Get the button background
+
+            // --- NEW: Get Player Identity Data ---
+            var playerData = client.PlayerObject.GetComponent<PlayerPlayerData>();
+            var playerMove = client.PlayerObject.GetComponent<PlayerMovement>();
+
+            string pName = playerData != null ? playerData.PlayerName.Value.ToString() : $"Player {clientId}";
+            Color pColor = playerData != null ? playerData.PlayerColor.Value : Color.white;
+
+            // Apply to UI
+            txt.text = pName;
+
+            // Option A: Tint the button background
+            btnImage.color = pColor;
+
+            // Option B: If text is hard to read on dark colors, outline it or check contrast
+            // For simplicity, let's keep text black or white based on preference, or:
+            txt.color = (pColor == Color.black || pColor == Color.blue) ? Color.white : Color.black;
+
+            // Check Death
+            if (playerMove != null && playerMove.isDead.Value)
             {
-                GameObject btn = Instantiate(voteButtonPrefab, buttonContainer);
-
-                // --- NEW CODE START ---
-                // Use the synced PlayerName, fall back to ID if empty
-                string displayName = player.PlayerName.Value.ToString();
-                if (string.IsNullOrEmpty(displayName))
-                {
-                    displayName = $"Player {client.ClientId}";
-                }
-                btn.GetComponentInChildren<TextMeshProUGUI>().text = displayName;
-                // --- NEW CODE END ---
-
-                btn.GetComponent<Button>().onClick.AddListener(() => CastVote(client.ClientId));
-                playerButtons.Add(client.ClientId, btn);
+                btn.interactable = false;
+                txt.text += " (DEAD)";
+                btnImage.color = Color.gray; // Grey out dead people
             }
-        }
+            else
+            {
+                btn.onClick.AddListener(() => OnVoteClicked(clientId));
+            }
 
-        GameObject skipBtn = Instantiate(voteButtonPrefab, buttonContainer);
-        skipBtn.GetComponentInChildren<TextMeshProUGUI>().text = "SKIP VOTE";
-        skipBtn.GetComponent<Button>().onClick.AddListener(() => CastSkip());
-
-        var localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
-        if (localPlayer != null && localPlayer.isDead.Value)
-        {
-            DisableButtons();
-        }
-    }
-    private void Update()
-    {
-        if (panel.activeSelf && VotingManager.Instance != null)
-        {
-            timerText.text = Mathf.Ceil(VotingManager.Instance.VoteTimer.Value).ToString();
+            playerButtons.Add(clientId, btn);
         }
     }
 
-    public void CastVote(ulong targetId)
+    public void OnVoteClicked(ulong targetId)
     {
+        // Disable all buttons so we can't vote twice
+        foreach (var btn in playerButtons.Values) btn.interactable = false;
+
+        // Send vote to server
         VotingManager.Instance.CastVoteServerRpc(NetworkManager.Singleton.LocalClientId, targetId, false);
-        DisableButtons();
     }
 
-    public void CastSkip()
+    public void OnSkipClicked()
     {
-        VotingManager.Instance.CastVoteServerRpc(NetworkManager.Singleton.LocalClientId, 0, true);
-        DisableButtons();
+        foreach (var btn in playerButtons.Values) btn.interactable = false;
+        VotingManager.Instance.CastVoteServerRpc(NetworkManager.Singleton.LocalClientId, ulong.MaxValue, true);
     }
 
-    private void DisableButtons()
-    {
-        foreach (var btn in buttonContainer.GetComponentsInChildren<Button>()) btn.interactable = false;
-    }
-
+    // Called by VotingManager when someone votes
     public void MarkVoted(ulong voterId)
     {
         if (playerButtons.ContainsKey(voterId))
         {
-            playerButtons[voterId].GetComponent<Image>().color = Color.green;
+            // Visual feedback: Add a little "Voted" icon or change text
+            var txt = playerButtons[voterId].GetComponentInChildren<TextMeshProUGUI>();
+            txt.text += " [VOTED]";
         }
     }
 
-    public void DisplayResult(ulong ejectedId, bool tie)
+    // Called by VotingManager when done
+    public void DisplayResult(ulong ejectedId, bool isTie)
     {
-        if (tie) resultText.text = "No one was ejected (Tie/Skip).";
-        else resultText.text = $"Player {ejectedId} was ejected.";
+        votingPanel.SetActive(false); // Hide buttons
+        resultText.gameObject.SetActive(true); // Show big text
 
-        Invoke(nameof(Hide), 3f);
+        if (isTie)
+        {
+            resultText.text = "No one was ejected. (Tie)";
+        }
+        else if (ejectedId == ulong.MaxValue)
+        {
+            resultText.text = "No one was ejected. (Skipped)";
+        }
+        else
+        {
+            resultText.text = $"Player {ejectedId} was ejected.";
+        }
+
+        Invoke(nameof(HideResult), 4f);
     }
 
-    private void Hide() => panel.SetActive(false);
+    private void HideResult()
+    {
+        resultText.gameObject.SetActive(false);
+    }
 }

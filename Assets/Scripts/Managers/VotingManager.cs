@@ -7,64 +7,101 @@ public class VotingManager : NetworkBehaviour
 {
     public static VotingManager Instance { get; private set; }
 
-    public NetworkVariable<float> VoteTimer = new NetworkVariable<float>(30f);
     public NetworkVariable<bool> IsVotingOpen = new NetworkVariable<bool>(false);
 
+    public NetworkVariable<float> VoteTimer = new NetworkVariable<float>(30f);
+
     private Dictionary<ulong, ulong> votes = new Dictionary<ulong, ulong>();
-    private List<ulong> skipVotes = new List<ulong>();
+    private HashSet<ulong> skipVotes = new HashSet<ulong>();
 
     private void Awake()
     {
         Instance = this;
     }
 
+    private void Update()
+    {
+        // Sync local timer for clients if needed, or Server updates it
+        if (IsServer && IsVotingOpen.Value)
+        {
+            // Sync with GameManager or run independently
+            VoteTimer.Value -= Time.deltaTime;
+        }
+    }
+
     public void StartVotingSession()
     {
         if (!IsServer) return;
-
-        VoteTimer.Value = 30f;
+        ResetVotes();
         IsVotingOpen.Value = true;
-        votes.Clear();
-        skipVotes.Clear();
+        VoteTimer.Value = GameManager.Instance.votingTime; // Reset Timer
 
         TriggerVotingUIClientRpc();
     }
 
-    private void Update()
+    public void ResetVotes()
     {
-        if (!IsServer || !IsVotingOpen.Value) return;
+        votes.Clear();
+        skipVotes.Clear();
+    }
 
-        VoteTimer.Value -= Time.deltaTime;
-        if (VoteTimer.Value <= 0) ConcludeVoting();
+    public void ConcludeVoting()
+    {
+        if (!IsServer) return;
+
+        IsVotingOpen.Value = false;
+
+        // Tally Votes
+        Dictionary<ulong, int> voteCounts = new Dictionary<ulong, int>();
+        foreach (var target in votes.Values)
+        {
+            if (!voteCounts.ContainsKey(target)) voteCounts[target] = 0;
+            voteCounts[target]++;
+        }
+
+        int skipCount = skipVotes.Count;
+        ulong ejectedId = ulong.MaxValue;
+        int maxVotes = 0;
+        bool isTie = false;
+
+        foreach (var kvp in voteCounts)
+        {
+            if (kvp.Value > maxVotes)
+            {
+                maxVotes = kvp.Value;
+                ejectedId = kvp.Key;
+                isTie = false;
+            }
+            else if (kvp.Value == maxVotes) isTie = true;
+        }
+
+        if (skipCount >= maxVotes)
+        {
+            isTie = true;
+            ejectedId = ulong.MaxValue;
+        }
+
+        if (!isTie && ejectedId != ulong.MaxValue)
+        {
+            EjectPlayer(ejectedId);
+        }
+
+        CloseVotingUIClientRpc(ejectedId, isTie);
+        Invoke(nameof(EndMeetingDelay), 5f);
+    }
+
+    private void EndMeetingDelay()
+    {
+        if (GameManager.Instance.CurrentState.Value != GameManager.GameState.Ended)
+        {
+            GameManager.Instance.CurrentState.Value = GameManager.GameState.Gameplay;
+        }
     }
 
     [Rpc(SendTo.Server)]
     public void CastVoteServerRpc(ulong voterId, ulong targetId, bool isSkip)
     {
         if (!IsVotingOpen.Value) return;
-
-        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(voterId, out NetworkClient voterClient))
-        {
-            var voter = voterClient.PlayerObject.GetComponent<PlayerMovement>();
-            if (voter == null || voter.isDead.Value) return;
-        }
-        else
-        {
-            return;
-        }
-
-        if (!isSkip)
-        {
-            if (NetworkManager.Singleton.ConnectedClients.TryGetValue(targetId, out NetworkClient targetClient))
-            {
-                var target = targetClient.PlayerObject.GetComponent<PlayerMovement>();
-                if (target == null || target.isDead.Value) return;
-            }
-            else
-            {
-                return;
-            }
-        }
 
         if (votes.ContainsKey(voterId) || skipVotes.Contains(voterId)) return;
 
@@ -73,60 +110,20 @@ public class VotingManager : NetworkBehaviour
 
         UpdateVoteStatusClientRpc(voterId);
 
-        int livingPlayers = 0;
+        // Check for early finish
+        int actualLiving = 0;
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null && !player.isDead.Value)
-            {
-                livingPlayers++;
-            }
+            var p = client.PlayerObject.GetComponent<PlayerMovement>();
+            if (p != null && !p.isDead.Value) actualLiving++;
         }
 
-        if ((votes.Count + skipVotes.Count) >= livingPlayers)
+        if ((votes.Count + skipVotes.Count) >= actualLiving)
         {
-            VoteTimer.Value = 3f;
+            // Speed up timer to end quickly
+            VoteTimer.Value = 3.0f;
+            GameManager.Instance.StateTimer.Value = 3.0f;
         }
-    }
-
-    private void ConcludeVoting()
-    {
-        IsVotingOpen.Value = false;
-
-        Dictionary<ulong, int> tallies = new Dictionary<ulong, int>();
-        foreach (var vote in votes.Values)
-        {
-            if (!tallies.ContainsKey(vote)) tallies[vote] = 0;
-            tallies[vote]++;
-        }
-
-        ulong ejectedId = ulong.MaxValue;
-        int maxVotes = 0;
-        bool tie = false;
-
-        foreach (var kvp in tallies)
-        {
-            if (kvp.Value > maxVotes)
-            {
-                maxVotes = kvp.Value;
-                ejectedId = kvp.Key;
-                tie = false;
-            }
-            else if (kvp.Value == maxVotes)
-            {
-                tie = true;
-            }
-        }
-
-        if (skipVotes.Count >= maxVotes) tie = true;
-
-        if (!tie && ejectedId != ulong.MaxValue)
-        {
-            EjectPlayer(ejectedId);
-        }
-
-        CloseVotingUIClientRpc(ejectedId, tie);
-        Invoke(nameof(ReturnToGame), 4f);
     }
 
     private void EjectPlayer(ulong id)
@@ -134,25 +131,20 @@ public class VotingManager : NetworkBehaviour
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(id, out NetworkClient client))
         {
             var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null) player.isDead.Value = true;
-            GameManager.Instance.OnPlayerDied(id);
+            if (player != null)
+            {
+                player.isDead.Value = true;
+                GameManager.Instance.OnPlayerDied(id);
+            }
         }
     }
 
-    private void ReturnToGame()
-    {
-        // FIX: If the game ended because the Impostor was ejected, do not switch back to Gameplay.
-        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Ended) return;
-
-        GameManager.Instance.CurrentState.Value = GameManager.GameState.Gameplay;
-    }
+    [Rpc(SendTo.ClientsAndHost)]
+    private void TriggerVotingUIClientRpc() { if (VotingUI.Instance != null) VotingUI.Instance.Show(); }
 
     [Rpc(SendTo.ClientsAndHost)]
-    private void TriggerVotingUIClientRpc() { VotingUI.Instance.Show(); }
+    private void UpdateVoteStatusClientRpc(ulong voterId) { if (VotingUI.Instance != null) VotingUI.Instance.MarkVoted(voterId); }
 
     [Rpc(SendTo.ClientsAndHost)]
-    private void UpdateVoteStatusClientRpc(ulong voterId) { VotingUI.Instance.MarkVoted(voterId); }
-
-    [Rpc(SendTo.ClientsAndHost)]
-    private void CloseVotingUIClientRpc(ulong ejectedId, bool tie) { VotingUI.Instance.DisplayResult(ejectedId, tie); }
+    private void CloseVotingUIClientRpc(ulong ejectedId, bool tie) { if (VotingUI.Instance != null) VotingUI.Instance.DisplayResult(ejectedId, tie); }
 }

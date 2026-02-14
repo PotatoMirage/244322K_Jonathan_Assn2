@@ -19,16 +19,17 @@ public class DeadBody : Interactable
 
     public override void OnInteract(ulong interactorId)
     {
-        if (!IsServer) return;
-
-        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(interactorId, out NetworkClient client))
+        // Client requests report -> Server Validates
+        ReportBodyServerRpc(interactorId);
+    }
+    [Rpc(SendTo.Server)]
+    private void ReportBodyServerRpc(ulong interactorId)
+    {
+        // Validation: Can this player report? (e.g. are they alive?)
+        var player = NetworkManager.Singleton.ConnectedClients[interactorId].PlayerObject.GetComponent<PlayerMovement>();
+        if (!player.isDead.Value)
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            if (player != null && !player.isDead.Value)
-            {
-                GetComponent<NetworkObject>().Despawn();
-                GameManager.Instance.TriggerMeeting(interactorId);
-            }
+            GameManager.Instance.ReportBody(interactorId);
         }
     }
 

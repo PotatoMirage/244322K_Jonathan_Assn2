@@ -3,44 +3,62 @@ using UnityEngine;
 using TMPro;
 using System.Collections;
 
-public class RoleRevealUI : NetworkBehaviour
+public class RoleRevealUI : MonoBehaviour
 {
+    public static RoleRevealUI Instance;
+
+    [Header("UI References")]
+    public GameObject panel;
     public TextMeshProUGUI roleText;
-    public float displayDuration = 5f;
-    private bool hasRevealed = false;
+    public TextMeshProUGUI goalText;
+    public Color crewmateColor = Color.cyan;
+    public Color impostorColor = Color.red;
 
-    private void Update()
+    private void Awake() { Instance = this; }
+
+    private void Start()
     {
-        if (GameManager.Instance == null) return;
+        panel.SetActive(false);
+        // Subscribe to Game State changes to trigger reveal
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.CurrentState.OnValueChanged += OnGameStateChanged;
+        }
+    }
 
-        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Gameplay && !hasRevealed)
+    private void OnGameStateChanged(GameManager.GameState oldState, GameManager.GameState newState)
+    {
+        if (newState == GameManager.GameState.Gameplay && oldState == GameManager.GameState.Lobby)
         {
             ShowRole();
         }
+    }
 
-        if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Lobby)
+    public void ShowRole()
+    {
+        panel.SetActive(true);
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        ulong impostorId = GameManager.Instance.ImpostorId.Value;
+
+        if (localId == impostorId)
         {
-            roleText.gameObject.SetActive(false);
-            hasRevealed = false;
+            roleText.text = "IMPOSTOR";
+            roleText.color = impostorColor;
+            goalText.text = "Kill everyone. Sabotage the ship.";
         }
+        else
+        {
+            roleText.text = "CREWMATE";
+            roleText.color = crewmateColor;
+            goalText.text = "Complete tasks. Discover the Impostor.";
+        }
+
+        StartCoroutine(HideDelay());
     }
 
-    private void ShowRole()
+    private IEnumerator HideDelay()
     {
-        hasRevealed = true;
-        roleText.gameObject.SetActive(true);
-
-        bool isImpostor = GameManager.Instance.ImpostorId.Value == NetworkManager.Singleton.LocalClientId;
-        roleText.text = isImpostor
-            ? "YOU ARE THE <color=red>IMPOSTOR</color>\n\nKILL EVERYONE"
-            : "YOU ARE A <color=#00FFFF>CREWMATE</color>\n\nCOMPLETE TASKS";
-
-        StartCoroutine(HideTextRoutine());
-    }
-
-    private IEnumerator HideTextRoutine()
-    {
-        yield return new WaitForSeconds(displayDuration);
-        roleText.gameObject.SetActive(false);
+        yield return new WaitForSeconds(3f);
+        panel.SetActive(false);
     }
 }
