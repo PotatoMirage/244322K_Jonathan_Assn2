@@ -46,6 +46,11 @@ public class GameManager : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         CurrentState.OnValueChanged -= OnStateChanged;
+
+        if (IsServer && NetworkManager.Singleton != null && NetworkManager.Singleton.SceneManager != null)
+        {
+            NetworkManager.Singleton.SceneManager.OnLoadEventCompleted -= OnSceneLoaded;
+        }
     }
 
     private void OnSceneLoaded(string sceneName, UnityEngine.SceneManagement.LoadSceneMode loadSceneMode, System.Collections.Generic.List<ulong> clientsCompleted, System.Collections.Generic.List<ulong> clientsTimedOut)
@@ -137,6 +142,8 @@ public class GameManager : NetworkBehaviour
     public void RestartGameMatch()
     {
         if (!IsServer) return;
+
+        CleanupBodies();
 
         CurrentState.Value = GameState.Lobby;
         ImpostorId.Value = ulong.MaxValue;

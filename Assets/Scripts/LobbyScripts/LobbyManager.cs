@@ -47,17 +47,13 @@ public class LobbyManager : MonoBehaviour
         try
         {
             InitializationOptions options = new InitializationOptions();
-
-#if UNITY_EDITOR
-            options.SetProfile("EditorProfile");
-#else
-            options.SetProfile("BuildProfile_" + UnityEngine.Random.Range(0, 10000));
-#endif
-
             await UnityServices.InitializeAsync(options);
+            if (AuthenticationService.Instance.SessionTokenExists)
+            {
+                AuthenticationService.Instance.ClearSessionToken();
+            }
 
-            if (!AuthenticationService.Instance.IsSignedIn)
-                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+            await AuthenticationService.Instance.SignInAnonymouslyAsync();
 
             UpdateStatus($"Signed in as {AuthenticationService.Instance.PlayerId}");
         }
@@ -109,12 +105,17 @@ public class LobbyManager : MonoBehaviour
         UpdateStatus("Creating...");
         await AuthenticationService.Instance.UpdatePlayerNameAsync(nameInput.value);
 
-        SessionOptions options = new SessionOptions { Name = $"{nameInput.value}'s Lobby", MaxPlayers = 4 }.WithRelayNetwork();
+        SessionOptions options = new SessionOptions
+        {
+            Name = $"{nameInput.value}'s Lobby",
+            MaxPlayers = 4,
+            IsPrivate = false,
+            IsLocked = false
+        }.WithRelayNetwork();
 
         try { CurrentSession = await MultiplayerService.Instance.CreateSessionAsync(options); }
         catch (Exception e) { UpdateStatus("Create Failed: " + e.Message); }
     }
-
     public async void QuickJoin()
     {
         UpdateStatus("Quick Joining...");
@@ -133,13 +134,28 @@ public class LobbyManager : MonoBehaviour
         sessionScrollView.Clear();
         try
         {
-            QuerySessionsResults results = await MultiplayerService.Instance.QuerySessionsAsync(new QuerySessionsOptions());
+            var queryOptions = new QuerySessionsOptions();
+
+            QuerySessionsResults results = await MultiplayerService.Instance.QuerySessionsAsync(queryOptions);
+
+            Debug.Log($"Found {results.Sessions.Count} lobbies");
+
             foreach (ISessionInfo session in results.Sessions)
             {
                 sessionScrollView.Add(new Button(async () => {
+                    if (CurrentSession != null) return;
+
                     UpdateStatus($"Joining {session.Name}...");
                     await AuthenticationService.Instance.UpdatePlayerNameAsync(nameInput.value);
-                    CurrentSession = await MultiplayerService.Instance.JoinSessionByIdAsync(session.Id);
+
+                    try
+                    {
+                        CurrentSession = await MultiplayerService.Instance.JoinSessionByIdAsync(session.Id);
+                    }
+                    catch (Exception e)
+                    {
+                        UpdateStatus("Join Failed: " + e.Message);
+                    }
                 })
                 { text = $"{session.Name} ({session.AvailableSlots} Slots)", style = { height = 40, marginBottom = 5 } });
             }
@@ -285,6 +301,13 @@ public class LobbyManager : MonoBehaviour
                 playerData.SetPlayerNameServerRpc(nameToSet);
                 Debug.Log($"Sent name update request: {nameToSet}");
             }
+        }
+    }
+    private async void OnApplicationQuit()
+    {
+        if (CurrentSession != null)
+        {
+            await CurrentSession.LeaveAsync();
         }
     }
 }
