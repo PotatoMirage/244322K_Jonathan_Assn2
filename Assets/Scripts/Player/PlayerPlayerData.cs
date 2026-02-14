@@ -22,8 +22,6 @@ public class PlayerPlayerData : NetworkBehaviour
             };
             PlayerColor.Value = colors[OwnerClientId % (ulong)colors.Length];
 
-            // 2. Assign Name (You can replace this with a Lobby name later)
-            PlayerName.Value = $"Player {OwnerClientId}";
         }
 
         // Apply Color immediately

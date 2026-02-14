@@ -103,6 +103,15 @@ public class VotingManager : NetworkBehaviour
     {
         if (!IsVotingOpen.Value) return;
 
+        // --- FIX: Check if the voter is DEAD ---
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(voterId, out NetworkClient client))
+        {
+            var player = client.PlayerObject.GetComponent<PlayerMovement>();
+            // If player is missing or confirmed dead, ignore the vote
+            if (player == null || player.isDead.Value) return;
+        }
+        // ---------------------------------------
+
         if (votes.ContainsKey(voterId) || skipVotes.Contains(voterId)) return;
 
         if (isSkip) skipVotes.Add(voterId);
@@ -112,9 +121,9 @@ public class VotingManager : NetworkBehaviour
 
         // Check for early finish
         int actualLiving = 0;
-        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        foreach (var c in NetworkManager.Singleton.ConnectedClientsList)
         {
-            var p = client.PlayerObject.GetComponent<PlayerMovement>();
+            var p = c.PlayerObject.GetComponent<PlayerMovement>();
             if (p != null && !p.isDead.Value) actualLiving++;
         }
 

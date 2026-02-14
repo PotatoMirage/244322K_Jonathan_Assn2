@@ -64,10 +64,24 @@ public class GameManager : NetworkBehaviour
             StartCoroutine(StartGameRoutine());
         }
     }
+    // Replace your existing StartGameRoutine with this:
     private System.Collections.IEnumerator StartGameRoutine()
     {
-        yield return new WaitForSeconds(5f);
+        // 1. Set the initial countdown time
+        float countdownDuration = 5f;
+        StateTimer.Value = countdownDuration;
 
+        // 2. Count down manually
+        while (StateTimer.Value > 0)
+        {
+            yield return null; // Wait for the next frame
+            StateTimer.Value -= Time.deltaTime;
+        }
+
+        // 3. Ensure it hits exactly 0 before continuing
+        StateTimer.Value = 0;
+
+        // --- The rest of your existing logic stays the same ---
 
         // Setup Roles
         var clients = NetworkManager.Singleton.ConnectedClientsIds.ToList();

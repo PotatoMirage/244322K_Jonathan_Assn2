@@ -48,37 +48,45 @@ public class VotingUI : MonoBehaviour
         foreach (Transform child in buttonContainer) Destroy(child.gameObject);
         playerButtons.Clear();
 
+        // 1. Check if *I* (Local Player) am dead
+        bool amIDead = false;
+        if (NetworkManager.Singleton.LocalClient != null &&
+            NetworkManager.Singleton.LocalClient.PlayerObject != null)
+        {
+            var myPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
+            if (myPlayer != null && myPlayer.isDead.Value) amIDead = true;
+        }
+
+        // 2. Generate Player Buttons
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
             ulong clientId = client.ClientId;
             GameObject btnObj = Instantiate(playerButtonPrefab, buttonContainer);
             Button btn = btnObj.GetComponent<Button>();
             TextMeshProUGUI txt = btnObj.GetComponentInChildren<TextMeshProUGUI>();
-            Image btnImage = btnObj.GetComponent<Image>(); // Get the button background
+            Image btnImage = btnObj.GetComponent<Image>();
 
-            // --- NEW: Get Player Identity Data ---
             var playerData = client.PlayerObject.GetComponent<PlayerPlayerData>();
             var playerMove = client.PlayerObject.GetComponent<PlayerMovement>();
 
             string pName = playerData != null ? playerData.PlayerName.Value.ToString() : $"Player {clientId}";
             Color pColor = playerData != null ? playerData.PlayerColor.Value : Color.white;
 
-            // Apply to UI
             txt.text = pName;
-
-            // Option A: Tint the button background
             btnImage.color = pColor;
-
-            // Option B: If text is hard to read on dark colors, outline it or check contrast
-            // For simplicity, let's keep text black or white based on preference, or:
             txt.color = (pColor == Color.black || pColor == Color.blue) ? Color.white : Color.black;
 
-            // Check Death
-            if (playerMove != null && playerMove.isDead.Value)
+            // If the TARGET is dead, we can't vote for them (gray out)
+            // If *I* am dead, I can't vote for anyone (disable interactable)
+            if ((playerMove != null && playerMove.isDead.Value))
             {
                 btn.interactable = false;
                 txt.text += " (DEAD)";
-                btnImage.color = Color.gray; // Grey out dead people
+                btnImage.color = Color.gray;
+            }
+            else if (amIDead)
+            {
+                btn.interactable = false; // I am dead, so I can't click
             }
             else
             {
@@ -87,6 +95,28 @@ public class VotingUI : MonoBehaviour
 
             playerButtons.Add(clientId, btn);
         }
+
+        // 3. --- FIX: Add Skip Button ---
+        GameObject skipBtnObj = Instantiate(playerButtonPrefab, buttonContainer);
+        Button skipBtn = skipBtnObj.GetComponent<Button>();
+        TextMeshProUGUI skipTxt = skipBtnObj.GetComponentInChildren<TextMeshProUGUI>();
+        Image skipBg = skipBtnObj.GetComponent<Image>();
+
+        skipTxt.text = "SKIP VOTE";
+        skipBg.color = Color.white; // Or any distinct color
+        skipTxt.color = Color.black;
+
+        if (amIDead)
+        {
+            skipBtn.interactable = false;
+        }
+        else
+        {
+            skipBtn.onClick.AddListener(OnSkipClicked);
+        }
+
+        // Add to dictionary with a special key so we can disable it later
+        playerButtons.Add(ulong.MaxValue, skipBtn);
     }
 
     public void OnVoteClicked(ulong targetId)

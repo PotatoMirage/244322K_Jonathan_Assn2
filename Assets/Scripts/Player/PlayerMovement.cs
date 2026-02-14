@@ -61,11 +61,26 @@ public class PlayerMovement : NetworkBehaviour
                 if (AuthenticationService.Instance.IsSignedIn && !string.IsNullOrEmpty(AuthenticationService.Instance.PlayerName))
                 {
                     myName = AuthenticationService.Instance.PlayerName;
+
+                    if (myName.Contains("#"))
+                    {
+                        myName = myName.Split('#')[0];
+                    }
                 }
             }
             catch { }
 
+            // --- FIX STARTS HERE ---
+            // Instead of setting it on this script, set it on the PlayerPlayerData component
+            var playerData = GetComponent<PlayerPlayerData>();
+            if (playerData != null)
+            {
+                playerData.SetPlayerNameServerRpc(myName);
+            }
+            // You can keep this if you want PlayerMovement to also have the name, 
+            // but PlayerNameTag looks at PlayerPlayerData.
             SetPlayerNameServerRpc(myName);
+            // --- FIX ENDS HERE ---
         }
 
         isDead.OnValueChanged += OnDeathStateChanged;
@@ -73,7 +88,6 @@ public class PlayerMovement : NetworkBehaviour
 
         StoreOriginalMaterials();
 
-        // Initialize state immediately
         UpdateMaterialState(isDead.Value);
     }
 
@@ -345,12 +359,23 @@ public class PlayerMovement : NetworkBehaviour
     [Rpc(SendTo.Owner)]
     public void TeleportClientRpc(Vector3 newPos)
     {
-        // Physics check: Disable CharacterController temporarily to allow teleport
+        // 1. Handle CharacterController (Existing Logic)
         CharacterController cc = GetComponent<CharacterController>();
         if (cc != null) cc.enabled = false;
 
+        // 2. Update Transform
         transform.position = newPos;
 
+        // 3. FIX: Handle Rigidbody explicitly
+        if (m_Rigidbody != null)
+        {
+            m_Rigidbody.position = newPos;
+            m_Rigidbody.linearVelocity = Vector3.zero; // Stop any momentum
+        }
+        // Alternatively, if m_Rigidbody is private, use GetComponent:
+        // if (TryGetComponent<Rigidbody>(out Rigidbody rb)) { rb.position = newPos; rb.linearVelocity = Vector3.zero; }
+
+        // 4. Re-enable CharacterController
         if (cc != null) cc.enabled = true;
     }
 
