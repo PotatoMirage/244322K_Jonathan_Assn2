@@ -1,28 +1,31 @@
-using Unity.Netcode;
+using System.Collections;
 using UnityEngine;
-using System.Collections.Generic;
+using Unity.Netcode;
+using System.Linq;
 
-[RequireComponent(typeof(AudioSource))]
 public class NetworkVoiceChat : NetworkBehaviour
 {
-    [Header("Settings")]
-    public int frequency = 16000;
-    public int chunkLength = 200;
-    public KeyCode pushToTalkKey = KeyCode.V;
-    public bool usePushToTalk = true;
+    // SETTINGS: Lower frequency to 8000 to save network bandwidth (Critical!)
+    private int frequency = 8000;
+    private int recordTime = 1; // Short buffer
 
-    private AudioSource audioSource;
-    private AudioClip recordingClip;
     private string microphoneDevice;
-
+    private AudioClip recordingClip;
     private int lastSamplePosition = 0;
-    private int clipTotalSamples;
-    private Queue<float> audioBuffer = new Queue<float>();
+    private bool isRecording = false;
+
+    public AudioSource audioSource;
+
+    public bool IsSpeaking { get; private set; }
 
     public override void OnNetworkSpawn()
     {
-        audioSource = GetComponent<AudioSource>();
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
+
         audioSource.spatialBlend = 1.0f;
+        audioSource.minDistance = 2f;
+        audioSource.maxDistance = 20f;
+        audioSource.rolloffMode = AudioRolloffMode.Linear;
 
         if (IsOwner)
         {
@@ -32,123 +35,87 @@ public class NetworkVoiceChat : NetworkBehaviour
 
     private void InitializeMicrophone()
     {
+        StartCoroutine(WaitForMicrophone());
+    }
+
+    private IEnumerator WaitForMicrophone()
+    {
+        float timeout = 3f;
+        while (Microphone.devices.Length <= 0 && timeout > 0)
+        {
+            yield return new WaitForSeconds(0.2f);
+            timeout -= 0.2f;
+        }
+
         if (Microphone.devices.Length > 0)
         {
             microphoneDevice = Microphone.devices[0];
+            Debug.Log($"[Voice] Mic Found: {microphoneDevice}");
+
             recordingClip = Microphone.Start(microphoneDevice, true, 10, frequency);
-            clipTotalSamples = recordingClip.samples;
+            isRecording = true;
+        }
+        else
+        {
+            Debug.LogError("[Voice] No Microphone detected!");
         }
     }
 
     private void Update()
     {
-        if (IsOwner && recordingClip != null)
-        {
-            HandleVoiceTransmission();
-        }
+        if (!IsOwner || !isRecording) return;
 
-        if (!IsOwner)
-        {
-            ProcessPlaybackQueue();
-        }
-    }
-
-    private void HandleVoiceTransmission()
-    {
-        bool isTalking = usePushToTalk ? Input.GetKey(pushToTalkKey) : true;
         int currentPosition = Microphone.GetPosition(microphoneDevice);
 
-        int samplesAvailable = GetSampleDifference(lastSamplePosition, currentPosition);
+        if (currentPosition < 0 || lastSamplePosition == currentPosition) return;
 
-        if (!isTalking)
+        int sampleCount = (currentPosition - lastSamplePosition + recordingClip.samples) % recordingClip.samples;
+
+        if (sampleCount > frequency / 10)
         {
-            lastSamplePosition = currentPosition;
-            return;
-        }
+            float[] samples = new float[sampleCount];
+            recordingClip.GetData(samples, lastSamplePosition);
 
-        if (samplesAvailable > frequency)
-        {
-            lastSamplePosition = currentPosition;
-            return;
-        }
-
-        if (samplesAvailable >= chunkLength)
-        {
-            int chunksToSend = samplesAvailable / chunkLength;
-
-            for (int i = 0; i < chunksToSend; i++)
+            if (samples.Max(x => Mathf.Abs(x)) > 0.01f)
             {
-                float[] chunk = new float[chunkLength];
-                ReadSafe(chunk, lastSamplePosition);
-                SendAudioServerRpc(chunk);
-                lastSamplePosition = (lastSamplePosition + chunkLength) % clipTotalSamples;
-            }
-        }
-    }
-
-    private int GetSampleDifference(int start, int end)
-    {
-        if (end >= start) return end - start;
-        return (clipTotalSamples - start) + end;
-    }
-
-    private void ReadSafe(float[] targetArray, int offset)
-    {
-        int samplesToEnd = clipTotalSamples - offset;
-
-        if (samplesToEnd >= targetArray.Length)
-        {
-            recordingClip.GetData(targetArray, offset);
-        }
-        else
-        {
-            float[] part1 = new float[samplesToEnd];
-            recordingClip.GetData(part1, offset);
-
-            int rest = targetArray.Length - samplesToEnd;
-            float[] part2 = new float[rest];
-            recordingClip.GetData(part2, 0);
-
-            System.Array.Copy(part1, 0, targetArray, 0, part1.Length);
-            System.Array.Copy(part2, 0, targetArray, part1.Length, part2.Length);
-        }
-    }
-
-    [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
-    private void SendAudioServerRpc(float[] audioData)
-    {
-        ReceiveAudioClientRpc(audioData);
-    }
-
-    [Rpc(SendTo.ClientsAndHost, Delivery = RpcDelivery.Unreliable)]
-    private void ReceiveAudioClientRpc(float[] audioData)
-    {
-        if (IsOwner) return;
-
-        foreach (float sample in audioData)
-        {
-            audioBuffer.Enqueue(sample);
-        }
-    }
-
-    private void ProcessPlaybackQueue()
-    {
-        if (audioBuffer.Count > 0 && !audioSource.isPlaying)
-        {
-            if (audioBuffer.Count < chunkLength * 3) return;
-
-            int length = audioBuffer.Count;
-            float[] playData = new float[length];
-            for (int i = 0; i < length; i++)
-            {
-                playData[i] = audioBuffer.Dequeue();
+                SendVoiceDataServerRpc(samples);
             }
 
-            AudioClip clip = AudioClip.Create("VoIP", length, 1, frequency, false);
-            clip.SetData(playData, 0);
-
-            audioSource.clip = clip;
-            audioSource.Play();
+            lastSamplePosition = currentPosition;
         }
+    }
+
+    [Rpc(SendTo.Server)]
+    private void SendVoiceDataServerRpc(float[] data)
+    {
+        // Server forwards to all OTHER clients
+        PlayVoiceDataClientRpc(data);
+    }
+
+    [Rpc(SendTo.ClientsAndHost)]
+    private void PlayVoiceDataClientRpc(float[] data)
+    {
+        if (!IsOwner)
+        {
+            PlayVoiceData(data);
+        }
+    }
+
+    private void PlayVoiceData(float[] data)
+    {
+        AudioClip clip = AudioClip.Create("VoiceChunk", data.Length, 1, frequency, false);
+        clip.SetData(data, 0);
+
+        audioSource.PlayOneShot(clip);
+
+        IsSpeaking = true;
+        StopCoroutine(nameof(ResetSpeaking));
+        StartCoroutine(nameof(ResetSpeaking));
+    }
+
+    private IEnumerator ResetSpeaking()
+    {
+        yield return new WaitForSeconds(0.2f);
+        IsSpeaking = false;
     }
 }
