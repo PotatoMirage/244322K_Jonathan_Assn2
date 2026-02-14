@@ -53,7 +53,6 @@ public class GameUIManager : NetworkBehaviour
     {
         if (GameManager.Instance == null) return;
 
-        // 1. Update Timer & Lobby State
         if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Lobby)
         {
             float time = Mathf.Ceil(GameManager.Instance.StateTimer.Value);
@@ -65,7 +64,6 @@ public class GameUIManager : NetworkBehaviour
             if (timerText) timerText.text = "";
             if (timerTextPanel) timerTextPanel.SetActive(false);
 
-            // 2. Update Role (Only show once game starts)
             if (NetworkManager.Singleton.LocalClient != null &&
                 NetworkManager.Singleton.LocalClient.PlayerObject != null)
             {
@@ -78,13 +76,11 @@ public class GameUIManager : NetworkBehaviour
             }
         }
 
-        // 3. Update Task Slider
         float current = GameManager.Instance.CompletedTasks.Value;
         float total = GameManager.Instance.TotalTasks.Value;
         if (taskSlider && total > 0) taskSlider.value = current / total;
         if (taskCountText) taskCountText.text = $"Tasks: {current}/{total}";
 
-        // 4. Handle End Screens
         if (GameManager.Instance.CurrentState.Value == GameManager.GameState.Ended)
         {
             if (gamePanel) gamePanel.SetActive(false);
@@ -92,7 +88,6 @@ public class GameUIManager : NetworkBehaviour
             if (crewmateWinScreen && result == 1) crewmateWinScreen.SetActive(true);
             if (impostorWinScreen && result == 2) impostorWinScreen.SetActive(true);
 
-            // Show Restart Button only for Host
             if (restartButton != null)
             {
                 restartButton.gameObject.SetActive(IsServer);

@@ -14,7 +14,6 @@ public class PlayerPlayerData : NetworkBehaviour
     {
         if (IsServer)
         {
-            // 1. Assign Random Color based on ID
             Color[] colors = new Color[]
             {
                 Color.red, Color.blue, Color.green, Color.yellow,
@@ -24,10 +23,8 @@ public class PlayerPlayerData : NetworkBehaviour
 
         }
 
-        // Apply Color immediately
         ApplyColor(PlayerColor.Value);
 
-        // Listen for changes
         PlayerColor.OnValueChanged += (prev, next) => ApplyColor(next);
     }
 

@@ -10,7 +10,7 @@ public class GlobalEventManager : NetworkBehaviour
 
     [Header("Ambient Settings")]
     public Color normalAmbient = Color.white;
-    public Color sabotageAmbient = new Color(0.1f, 0.1f, 0.1f, 1f); // Very Dark/Red
+    public Color sabotageAmbient = new Color(0.1f, 0.1f, 0.1f, 1f);
 
     private void Awake()
     {
@@ -20,10 +20,8 @@ public class GlobalEventManager : NetworkBehaviour
 
     private void Start()
     {
-        // Listen for changes
         IsLightsSabotaged.OnValueChanged += OnSabotageChanged;
 
-        // Initialize
         UpdateAmbientLight(IsLightsSabotaged.Value);
     }
 
@@ -44,7 +42,7 @@ public class GlobalEventManager : NetworkBehaviour
 
     private IEnumerator RestoreLightsRoutine()
     {
-        yield return new WaitForSeconds(10f); // 10 seconds of darkness
+        yield return new WaitForSeconds(10f);
         IsLightsSabotaged.Value = false;
     }
 
@@ -55,10 +53,8 @@ public class GlobalEventManager : NetworkBehaviour
 
     private void UpdateAmbientLight(bool isSabotaged)
     {
-        // This changes the lighting for EVERYONE locally based on the NetworkVariable
         RenderSettings.ambientLight = isSabotaged ? sabotageAmbient : normalAmbient;
 
-        // Optional: Force update if using Realtime GI
         DynamicGI.UpdateEnvironment();
     }
 }

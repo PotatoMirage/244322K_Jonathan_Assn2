@@ -1,7 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-// Base class for all future minigames
 public abstract class BaseMinigameLogic : MonoBehaviour
 {
     protected TaskUIManager manager;

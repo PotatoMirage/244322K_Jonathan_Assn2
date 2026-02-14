@@ -36,9 +36,9 @@ public class GameEnding : NetworkBehaviour
         int totalLivingPlayers = 0;
         int playersInZone = playersAtExit.Count;
 
-        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        foreach (NetworkClient client in NetworkManager.Singleton.ConnectedClientsList)
         {
-            var playerScript = client.PlayerObject.GetComponent<PlayerMovement>();
+            PlayerMovement playerScript = client.PlayerObject.GetComponent<PlayerMovement>();
             if (playerScript != null && !playerScript.isDead.Value)
             {
                 totalLivingPlayers++;

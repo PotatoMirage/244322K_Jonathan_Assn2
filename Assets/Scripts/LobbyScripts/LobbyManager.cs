@@ -46,19 +46,15 @@ public class LobbyManager : MonoBehaviour
 
         try
         {
-            // --- FIX START: Profile Management ---
-            // This allows multiple builds on the same PC to have different Identities
-            var options = new InitializationOptions();
+            InitializationOptions options = new InitializationOptions();
 
 #if UNITY_EDITOR
-            // Editor always uses the "EditorProfile"
             options.SetProfile("EditorProfile");
 #else
             options.SetProfile("BuildProfile_" + UnityEngine.Random.Range(0, 10000));
 #endif
 
             await UnityServices.InitializeAsync(options);
-            // --- FIX END ---
 
             if (!AuthenticationService.Instance.IsSignedIn)
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
@@ -137,7 +133,7 @@ public class LobbyManager : MonoBehaviour
         sessionScrollView.Clear();
         try
         {
-            var results = await MultiplayerService.Instance.QuerySessionsAsync(new QuerySessionsOptions());
+            QuerySessionsResults results = await MultiplayerService.Instance.QuerySessionsAsync(new QuerySessionsOptions());
             foreach (ISessionInfo session in results.Sessions)
             {
                 sessionScrollView.Add(new Button(async () => {
@@ -193,7 +189,7 @@ public class LobbyManager : MonoBehaviour
 
         statusLabel = new Label("Initializing...")
         {
-            style = { color = Color.white, marginBottom = 10, alignSelf = Align.Center}
+            style = { color = Color.white, marginBottom = 10, alignSelf = Align.Center }
         };
         mainMenuContainer.Add(statusLabel);
 
@@ -205,7 +201,8 @@ public class LobbyManager : MonoBehaviour
 
         mainMenuContainer.Add(new Button(CreateGame)
         {
-            text = "Create Lobby (Host)", style = { height = 45, marginTop = 15, backgroundColor = new Color(0.2f, 0.6f, 0.2f) }
+            text = "Create Lobby (Host)",
+            style = { height = 45, marginTop = 15, backgroundColor = new Color(0.2f, 0.6f, 0.2f) }
         });
 
         mainMenuContainer.Add(new Label("--- JOIN ---")
@@ -216,15 +213,18 @@ public class LobbyManager : MonoBehaviour
         joinCodeInput = new TextField("Lobby Code"); mainMenuContainer.Add(joinCodeInput);
         mainMenuContainer.Add(new Button(JoinByCode)
         {
-            text = "Join by Code", style = { height = 30 }
+            text = "Join by Code",
+            style = { height = 30 }
         });
         mainMenuContainer.Add(new Button(QuickJoin)
         {
-            text = "Quick Join (Random)", style = { height = 40, marginTop = 10, backgroundColor = new Color(0.2f, 0.4f, 0.8f) }
+            text = "Quick Join (Random)",
+            style = { height = 40, marginTop = 10, backgroundColor = new Color(0.2f, 0.4f, 0.8f) }
         });
         mainMenuContainer.Add(new Button(OpenBrowser)
         {
-            text = "Open Server Browser", style = { height = 40, marginTop = 5 }
+            text = "Open Server Browser",
+            style = { height = 40, marginTop = 5 }
         });
 
         browserContainer = new VisualElement();
@@ -238,7 +238,8 @@ public class LobbyManager : MonoBehaviour
         browserContainer.style.display = DisplayStyle.None;
         root.Add(browserContainer);
         browserContainer.Add(new Label("SERVER BROWSER")
-        { style = { fontSize = 24, color = Color.white, marginBottom = 10, alignSelf = Align.Center }
+        {
+            style = { fontSize = 24, color = Color.white, marginBottom = 10, alignSelf = Align.Center }
         });
 
         sessionScrollView = new ScrollView();
@@ -246,17 +247,20 @@ public class LobbyManager : MonoBehaviour
         sessionScrollView.style.backgroundColor = new Color(0, 0, 0, 0.3f);
         browserContainer.Add(sessionScrollView);
 
-        var row = new VisualElement
+        VisualElement row = new VisualElement
         {
             style = { flexDirection = FlexDirection.Row, marginTop = 10, justifyContent = Justify.SpaceBetween }
         };
         row.Add(new Button(RefreshLobbies)
         {
-            text = "Refresh", style = { width = 100, height = 40 }
+            text = "Refresh",
+            style = { width = 100, height = 40 }
         });
 
         row.Add(new Button(CloseBrowser)
-        { text = "Back", style = { width = 100, height = 40, backgroundColor = Color.red }
+        {
+            text = "Back",
+            style = { width = 100, height = 40, backgroundColor = Color.red }
         });
         browserContainer.Add(row);
     }
@@ -266,23 +270,18 @@ public class LobbyManager : MonoBehaviour
     }
     public void SetLocalPlayerName()
     {
-        // 1. Get the text from your existing text field
         string nameToSet = nameInput.text;
 
         if (string.IsNullOrEmpty(nameToSet)) return;
 
-        // 2. Find the local player's object
         if (NetworkManager.Singleton.LocalClient != null &&
             NetworkManager.Singleton.LocalClient.PlayerObject != null)
         {
-            var playerObject = NetworkManager.Singleton.LocalClient.PlayerObject;
-
-            // 3. Get the Data script we made earlier
-            var playerData = playerObject.GetComponent<PlayerPlayerData>();
+            NetworkObject playerObject = NetworkManager.Singleton.LocalClient.PlayerObject;
+            PlayerPlayerData playerData = playerObject.GetComponent<PlayerPlayerData>();
 
             if (playerData != null)
             {
-                // 4. Send the RPC
                 playerData.SetPlayerNameServerRpc(nameToSet);
                 Debug.Log($"Sent name update request: {nameToSet}");
             }

@@ -20,7 +20,7 @@ namespace HelloWorld
 
         void OnEnable()
         {
-            var uiDocument = GetComponent<UIDocument>();
+            UIDocument uiDocument = GetComponent<UIDocument>();
             rootVisualElement = uiDocument.rootVisualElement;
 
             hostButton = rootVisualElement.Q<Button>("HostButton");
@@ -60,11 +60,9 @@ namespace HelloWorld
 
         void OnClientButtonClicked() => NetworkManager.Singleton.StartClient();
 
-        // Disclaimer: This is not the recommended way to create and stylize the UI elements, it is only utilized for the sake of simplicity.
-        // The recommended way is to use UXML and USS. Please see this link for more information: https://docs.unity3d.com/Manual/UIE-USS.html
         private Button CreateButton(string name, string text)
         {
-            var button = new Button();
+            Button button = new Button();
             button.name = name;
             button.text = text;
             button.style.width = 240;
@@ -76,7 +74,7 @@ namespace HelloWorld
 
         private Label CreateLabel(string name, string content)
         {
-            var label = new Label();
+            Label label = new Label();
             label.name = name;
             label.text = content;
             label.style.color = Color.black;
@@ -115,7 +113,7 @@ namespace HelloWorld
 
         void UpdateStatusLabels()
         {
-            var mode = NetworkManager.Singleton.IsHost ? "Host" : NetworkManager.Singleton.IsServer ? "Server" : "Client";
+            string mode = NetworkManager.Singleton.IsHost ? "Host" : NetworkManager.Singleton.IsServer ? "Server" : "Client";
             string transport = "Transport: " + NetworkManager.Singleton.NetworkConfig.NetworkTransport.GetType().Name;
             string modeText = "Mode: " + mode;
             SetStatusText($"{transport}\n{modeText}");
@@ -129,15 +127,11 @@ namespace HelloWorld
                                             new Vector3(7.4f, 0f, -3f)};
 
 
-            //loop through the array position
             for (int i = 0; i < positionArray.Length; ++i)
             {
-                // Create a ghost prefab
-                var instance = Instantiate(prefabghost, positionArray[i], Quaternion.identity);
-                var instanceNetworkObject = instance.GetComponent<NetworkObject>();
+                GameObject instance = Instantiate(prefabghost, positionArray[i], Quaternion.identity);
+                NetworkObject instanceNetworkObject = instance.GetComponent<NetworkObject>();
                 instanceNetworkObject.Spawn();
-                //instance.transform.parent = enemies.transform;
-                //instanceNetworkObject.transform.parent = enemies.transform;
                 if (enemies.GetComponent<NetworkObject>() != null)
                 {
                     instanceNetworkObject.TrySetParent(enemies.transform);
@@ -150,7 +144,6 @@ namespace HelloWorld
 
                 patrolPoints.StartAI();
 
-                //obj.GetComponentInChildren<Observer>().gameEnding = endingScript;
             }
         }
     }

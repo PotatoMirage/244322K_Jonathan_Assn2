@@ -19,7 +19,6 @@ public class RoleRevealUI : MonoBehaviour
     private void Start()
     {
         panel.SetActive(false);
-        // Subscribe to Game State changes to trigger reveal
         if (GameManager.Instance != null)
         {
             GameManager.Instance.CurrentState.OnValueChanged += OnGameStateChanged;

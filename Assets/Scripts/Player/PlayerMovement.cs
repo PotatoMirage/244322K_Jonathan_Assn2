@@ -70,17 +70,12 @@ public class PlayerMovement : NetworkBehaviour
             }
             catch { }
 
-            // --- FIX STARTS HERE ---
-            // Instead of setting it on this script, set it on the PlayerPlayerData component
-            var playerData = GetComponent<PlayerPlayerData>();
+            PlayerPlayerData playerData = GetComponent<PlayerPlayerData>();
             if (playerData != null)
             {
                 playerData.SetPlayerNameServerRpc(myName);
             }
-            // You can keep this if you want PlayerMovement to also have the name, 
-            // but PlayerNameTag looks at PlayerPlayerData.
             SetPlayerNameServerRpc(myName);
-            // --- FIX ENDS HERE ---
         }
 
         isDead.OnValueChanged += OnDeathStateChanged;
@@ -109,7 +104,7 @@ public class PlayerMovement : NetworkBehaviour
     }
     private void StoreOriginalMaterials()
     {
-        foreach (var r in playerRenderers)
+        foreach (Renderer r in playerRenderers)
         {
             if (r != null && !originalMaterials.ContainsKey(r))
             {
@@ -120,7 +115,7 @@ public class PlayerMovement : NetworkBehaviour
 
     private void FindMyCamera()
     {
-        var virtualCamera = FindAnyObjectByType<CinemachineCamera>();
+        CinemachineCamera virtualCamera = FindAnyObjectByType<CinemachineCamera>();
         if (virtualCamera != null)
         {
             virtualCamera.Follow = transform;
@@ -158,7 +153,7 @@ public class PlayerMovement : NetworkBehaviour
 
         if (isDead.Value)
         {
-            Vector3 desiredMove = m_Movement * ghostSpeed * Time.fixedDeltaTime;
+            Vector3 desiredMove = ghostSpeed * Time.fixedDeltaTime * m_Movement;
             m_Rigidbody.MovePosition(m_Rigidbody.position + desiredMove);
             m_Rigidbody.linearVelocity = Vector3.zero;
         }
@@ -178,22 +173,15 @@ public class PlayerMovement : NetworkBehaviour
     }
     private void LateUpdate()
     {
-        // Safety check: If game isn't running or local player isn't ready, do nothing
         if (NetworkManager.Singleton == null || LocalPlayer == null) return;
 
         bool amILocal = IsOwner;
         bool isLocalViewerDead = LocalPlayer.isDead.Value;
         bool thisPlayerIsDead = isDead.Value;
 
-        // LOGIC:
-        // 1. If this player is ALIVE, everyone sees them.
-        // 2. If this player is DEAD, they are visible ONLY if:
-        //    a. I am the owner (I see my own ghost)
-        //    b. I am also dead (Ghosts see ghosts)
         bool shouldBeVisible = !thisPlayerIsDead || (amILocal || isLocalViewerDead);
 
-        // Enforce visibility on all renderers
-        foreach (var r in playerRenderers)
+        foreach (Renderer r in playerRenderers)
         {
             if (r != null && r.enabled != shouldBeVisible)
             {
@@ -232,9 +220,9 @@ public class PlayerMovement : NetworkBehaviour
         int layerMask = LayerMask.GetMask("Player");
         Collider[] hits = Physics.OverlapSphere(transform.position, killRange);
 
-        foreach (var hit in hits)
+        foreach (Collider hit in hits)
         {
-            if (hit.TryGetComponent<PlayerMovement>(out var target))
+            if (hit.TryGetComponent<PlayerMovement>(out PlayerMovement target))
             {
                 if (target != this && !target.isDead.Value)
                 {
@@ -252,7 +240,7 @@ public class PlayerMovement : NetworkBehaviour
 
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(targetId, out NetworkClient client))
         {
-            var target = client.PlayerObject.GetComponent<PlayerMovement>();
+            PlayerMovement target = client.PlayerObject.GetComponent<PlayerMovement>();
             if (target != null && !target.isDead.Value)
             {
                 if (Vector3.Distance(transform.position, target.transform.position) <= killRange + 1f)
@@ -281,16 +269,14 @@ public class PlayerMovement : NetworkBehaviour
 
     private void UpdateMaterialState(bool isDeadState)
     {
-        foreach (var r in playerRenderers)
+        foreach (Renderer r in playerRenderers)
         {
             if (r == null) continue;
 
             if (isDeadState)
             {
-                // Switch to Ghost Material
                 if (ghostMaterial != null)
                 {
-                    // Check to avoid redundant array allocations
                     if (r.sharedMaterial != ghostMaterial)
                     {
                         Material[] ghostMats = new Material[r.sharedMaterials.Length];
@@ -301,7 +287,6 @@ public class PlayerMovement : NetworkBehaviour
             }
             else
             {
-                // Revert to Original Materials
                 if (originalMaterials.ContainsKey(r))
                 {
                     r.materials = originalMaterials[r];
@@ -344,7 +329,6 @@ public class PlayerMovement : NetworkBehaviour
             m_Rigidbody.useGravity = true;
             m_Rigidbody.isKinematic = false;
         }
-        // Material reset is handled by UpdateMaterialState
     }
 
     public void TeleportTo(Vector3 pos)
@@ -359,23 +343,17 @@ public class PlayerMovement : NetworkBehaviour
     [Rpc(SendTo.Owner)]
     public void TeleportClientRpc(Vector3 newPos)
     {
-        // 1. Handle CharacterController (Existing Logic)
         CharacterController cc = GetComponent<CharacterController>();
         if (cc != null) cc.enabled = false;
 
-        // 2. Update Transform
         transform.position = newPos;
 
-        // 3. FIX: Handle Rigidbody explicitly
         if (m_Rigidbody != null)
         {
             m_Rigidbody.position = newPos;
-            m_Rigidbody.linearVelocity = Vector3.zero; // Stop any momentum
+            m_Rigidbody.linearVelocity = Vector3.zero;
         }
-        // Alternatively, if m_Rigidbody is private, use GetComponent:
-        // if (TryGetComponent<Rigidbody>(out Rigidbody rb)) { rb.position = newPos; rb.linearVelocity = Vector3.zero; }
 
-        // 4. Re-enable CharacterController
         if (cc != null) cc.enabled = true;
     }
 
@@ -394,7 +372,7 @@ public class PlayerMovement : NetworkBehaviour
     {
         if (NetworkManager.Singleton == null || NetworkManager.Singleton.LocalClient == null || NetworkManager.Singleton.LocalClient.PlayerObject == null) return;
 
-        var localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
+        PlayerMovement localPlayer = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerMovement>();
         if (localPlayer == null) return;
 
         bool amILocal = IsOwner;
@@ -414,7 +392,7 @@ public class PlayerMovement : NetworkBehaviour
 
     private void SetRenderersVisible(bool visible, bool isGhostMaterial)
     {
-        foreach (var r in playerRenderers)
+        foreach (Renderer r in playerRenderers)
         {
             if (r == null) continue;
 

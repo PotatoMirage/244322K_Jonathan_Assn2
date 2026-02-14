@@ -43,10 +43,10 @@ public class Vent : Interactable
         {
             if (NetworkManager.Singleton.LocalClient.PlayerObject != null)
             {
-                var playerTransform = NetworkManager.Singleton.LocalClient.PlayerObject.transform;
+                Transform playerTransform = NetworkManager.Singleton.LocalClient.PlayerObject.transform;
                 playerTransform.position = targetPos;
 
-                if (playerTransform.TryGetComponent<Rigidbody>(out var rb))
+                if (playerTransform.TryGetComponent<Rigidbody>(out Rigidbody rb))
                 {
                     rb.linearVelocity = Vector3.zero;
                     rb.angularVelocity = Vector3.zero;

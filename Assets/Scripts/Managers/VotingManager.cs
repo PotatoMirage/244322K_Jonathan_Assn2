@@ -21,10 +21,8 @@ public class VotingManager : NetworkBehaviour
 
     private void Update()
     {
-        // Sync local timer for clients if needed, or Server updates it
         if (IsServer && IsVotingOpen.Value)
         {
-            // Sync with GameManager or run independently
             VoteTimer.Value -= Time.deltaTime;
         }
     }
@@ -34,7 +32,7 @@ public class VotingManager : NetworkBehaviour
         if (!IsServer) return;
         ResetVotes();
         IsVotingOpen.Value = true;
-        VoteTimer.Value = GameManager.Instance.votingTime; // Reset Timer
+        VoteTimer.Value = GameManager.Instance.votingTime;
 
         TriggerVotingUIClientRpc();
     }
@@ -51,9 +49,8 @@ public class VotingManager : NetworkBehaviour
 
         IsVotingOpen.Value = false;
 
-        // Tally Votes
         Dictionary<ulong, int> voteCounts = new Dictionary<ulong, int>();
-        foreach (var target in votes.Values)
+        foreach (ulong target in votes.Values)
         {
             if (!voteCounts.ContainsKey(target)) voteCounts[target] = 0;
             voteCounts[target]++;
@@ -64,7 +61,7 @@ public class VotingManager : NetworkBehaviour
         int maxVotes = 0;
         bool isTie = false;
 
-        foreach (var kvp in voteCounts)
+        foreach (KeyValuePair<ulong, int> kvp in voteCounts)
         {
             if (kvp.Value > maxVotes)
             {
@@ -103,14 +100,11 @@ public class VotingManager : NetworkBehaviour
     {
         if (!IsVotingOpen.Value) return;
 
-        // --- FIX: Check if the voter is DEAD ---
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(voterId, out NetworkClient client))
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
-            // If player is missing or confirmed dead, ignore the vote
+            PlayerMovement player = client.PlayerObject.GetComponent<PlayerMovement>();
             if (player == null || player.isDead.Value) return;
         }
-        // ---------------------------------------
 
         if (votes.ContainsKey(voterId) || skipVotes.Contains(voterId)) return;
 
@@ -119,17 +113,15 @@ public class VotingManager : NetworkBehaviour
 
         UpdateVoteStatusClientRpc(voterId);
 
-        // Check for early finish
         int actualLiving = 0;
-        foreach (var c in NetworkManager.Singleton.ConnectedClientsList)
+        foreach (NetworkClient c in NetworkManager.Singleton.ConnectedClientsList)
         {
-            var p = c.PlayerObject.GetComponent<PlayerMovement>();
+            PlayerMovement p = c.PlayerObject.GetComponent<PlayerMovement>();
             if (p != null && !p.isDead.Value) actualLiving++;
         }
 
         if ((votes.Count + skipVotes.Count) >= actualLiving)
         {
-            // Speed up timer to end quickly
             VoteTimer.Value = 3.0f;
             GameManager.Instance.StateTimer.Value = 3.0f;
         }
@@ -139,7 +131,7 @@ public class VotingManager : NetworkBehaviour
     {
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(id, out NetworkClient client))
         {
-            var player = client.PlayerObject.GetComponent<PlayerMovement>();
+            PlayerMovement player = client.PlayerObject.GetComponent<PlayerMovement>();
             if (player != null)
             {
                 player.isDead.Value = true;

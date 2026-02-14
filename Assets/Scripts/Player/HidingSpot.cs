@@ -29,11 +29,11 @@ public class HidingSpot : Interactable
         {
             if (client.PlayerObject != null)
             {
-                var playerTransform = client.PlayerObject.transform;
-                var rb = client.PlayerObject.GetComponent<Rigidbody>();
-                var col = client.PlayerObject.GetComponent<Collider>();
-                var movement = client.PlayerObject.GetComponent<PlayerMovement>();
-                var renderers = client.PlayerObject.GetComponentsInChildren<Renderer>();
+                Transform playerTransform = client.PlayerObject.transform;
+                Rigidbody rb = client.PlayerObject.GetComponent<Rigidbody>();
+                Collider col = client.PlayerObject.GetComponent<Collider>();
+                PlayerMovement movement = client.PlayerObject.GetComponent<PlayerMovement>();
+                Renderer[] renderers = client.PlayerObject.GetComponentsInChildren<Renderer>();
 
                 if (isHidden)
                 {
@@ -41,7 +41,7 @@ public class HidingSpot : Interactable
                     if (rb) rb.isKinematic = true;
                     if (col) col.enabled = false;
                     if (movement) movement.enabled = false;
-                    foreach (var r in renderers) r.enabled = false;
+                    foreach (Renderer r in renderers) r.enabled = false;
                 }
                 else
                 {
@@ -49,7 +49,7 @@ public class HidingSpot : Interactable
                     if (rb) rb.isKinematic = false;
                     if (col) col.enabled = true;
                     if (movement) movement.enabled = true;
-                    foreach (var r in renderers) r.enabled = true;
+                    foreach (Renderer r in renderers) r.enabled = true;
                 }
             }
         }

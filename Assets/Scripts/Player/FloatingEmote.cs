@@ -14,10 +14,8 @@ public class FloatingEmote : MonoBehaviour
 
     void Update()
     {
-        // Floating animation
-        transform.position += Vector3.up * moveSpeed * Time.deltaTime;
+        transform.position += moveSpeed * Time.deltaTime * Vector3.up;
 
-        // Billboard effect (face camera)
         if (mainCamera != null)
         {
             transform.LookAt(transform.position + mainCamera.transform.rotation * Vector3.forward,

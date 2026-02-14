@@ -7,7 +7,7 @@ public class WireEndpoint : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
     public Color wireColor;
     public WireTask task;
     public Image visual;
-    public bool isLeftSide; // Set in Inspector
+    public bool isLeftSide;
 
     public void SetColor(Color c)
     {
@@ -22,12 +22,10 @@ public class WireEndpoint : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
 
     public void OnDrag(PointerEventData eventData)
     {
-        // Required interface for Drag to work, logic handled in Parent
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        // If we didn't hit a drop target, reset
     }
 
     public void OnDrop(PointerEventData eventData)

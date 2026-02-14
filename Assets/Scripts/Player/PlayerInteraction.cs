@@ -28,7 +28,7 @@ public class PlayerInteraction : NetworkBehaviour
         Interactable closest = null;
         float closeDist = float.MaxValue;
 
-        foreach (var hit in hits)
+        foreach (Collider hit in hits)
         {
             Interactable interactable = hit.GetComponent<Interactable>() ?? hit.GetComponentInParent<Interactable>();
             if (interactable != null)
@@ -54,7 +54,7 @@ public class PlayerInteraction : NetworkBehaviour
     {
         if (NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(objId, out NetworkObject obj))
         {
-            if (obj.TryGetComponent<Interactable>(out var interactable))
+            if (obj.TryGetComponent<Interactable>(out Interactable interactable))
             {
                 interactable.OnInteract(OwnerClientId);
             }

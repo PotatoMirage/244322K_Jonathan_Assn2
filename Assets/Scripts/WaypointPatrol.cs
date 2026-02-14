@@ -13,10 +13,7 @@ public class WaypointPatrol : MonoBehaviour
 
     void Awake()
     {
-        if (waypoints == null)
-        {
-            waypoints = new List<Transform>();
-        }
+        waypoints ??= new List<Transform>();
     }
 
     public void StartAI()

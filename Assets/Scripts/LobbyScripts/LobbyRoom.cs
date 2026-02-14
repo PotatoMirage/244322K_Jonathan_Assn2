@@ -24,7 +24,7 @@ public class LobbyRoom : NetworkBehaviour
             if (LobbyManager.Instance != null && LobbyManager.Instance.CurrentSession != null)
             {
                 string code = LobbyManager.Instance.CurrentSession.Code;
-                LobbyCode.Value = code; 
+                LobbyCode.Value = code;
                 Debug.Log($"Host set Lobby Code to: {code}");
             }
         }
@@ -36,7 +36,7 @@ public class LobbyRoom : NetworkBehaviour
         if (IsOwner)
         {
             SetNameServerRpc(AuthenticationService.Instance.PlayerName);
-            var uiDoc = FindAnyObjectByType<UIDocument>();
+            UIDocument uiDoc = FindAnyObjectByType<UIDocument>();
             if (uiDoc != null) CreateRoomUI(uiDoc.rootVisualElement);
 
             UpdateCodeUI(LobbyCode.Value.ToString());
@@ -82,7 +82,8 @@ public class LobbyRoom : NetworkBehaviour
 
         readyButton = new Button(() => ToggleReadyServerRpc())
         {
-            text = "READY", style = { height = 40 }
+            text = "READY",
+            style = { height = 40 }
         };
         roomContainer.Add(readyButton);
 
@@ -98,7 +99,8 @@ public class LobbyRoom : NetworkBehaviour
                 NetworkManager.Singleton.SceneManager.LoadScene("MainScene", UnityEngine.SceneManagement.LoadSceneMode.Single);
             })
             {
-                text = "START GAME", style ={ height = 40, backgroundColor = Color.green, display = DisplayStyle.None, marginTop = 10 }
+                text = "START GAME",
+                style = { height = 40, backgroundColor = Color.green, display = DisplayStyle.None, marginTop = 10 }
             };
             roomContainer.Add(startButton);
         }
@@ -136,11 +138,11 @@ public class LobbyRoom : NetworkBehaviour
         bool allReady = true;
         int count = 0;
 
-        var players = FindObjectsByType<LobbyRoom>(FindObjectsSortMode.None);
-        foreach (var p in players)
+        LobbyRoom[] players = FindObjectsByType<LobbyRoom>(FindObjectsSortMode.None);
+        foreach (LobbyRoom p in players)
         {
             count++;
-            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, justifyContent = Justify.SpaceBetween } };
+            VisualElement row = new VisualElement { style = { flexDirection = FlexDirection.Row, justifyContent = Justify.SpaceBetween } };
             row.Add(new Label(p.PlayerName.Value.ToString()) { style = { color = Color.white } });
             row.Add(new Label(p.IsReady.Value ? "READY" : "...") { style = { color = p.IsReady.Value ? Color.green : Color.red } });
             playerList.Add(row);

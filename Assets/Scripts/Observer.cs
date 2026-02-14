@@ -29,9 +29,9 @@ public class Observer : NetworkBehaviour
         {
             if (hit.collider.transform == player)
             {
-                if (player.TryGetComponent<PlayerMovement>(out var script) && !script.isDead.Value)
+                if (player.TryGetComponent<PlayerMovement>(out PlayerMovement script) && !script.isDead.Value)
                 {
-                    script.isDead.Value = true; // Auto-triggers death
+                    script.isDead.Value = true;
                     GameManager.Instance.OnPlayerDied(script.OwnerClientId);
                 }
             }
